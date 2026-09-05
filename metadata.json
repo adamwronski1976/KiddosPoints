@@ -1,0 +1,8 @@
+{
+  "name": "KiddosPoints",
+  "description": "Zgrywalizowany system zadań domowych, punktów i nagród dla Home Assistant z panelem zarządzania i kartą Lovelace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

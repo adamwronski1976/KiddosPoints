@@ -1,0 +1,10 @@
+{
+  "domain": "chore_manager",
+  "name": "KiddosPoints",
+  "documentation": "https://github.com/twoja-nazwa/kiddos-points",
+  "dependencies": [],
+  "codeowners": [],
+  "requirements": [],
+  "version": "1.0.0",
+  "iot_class": "local_polling"
+}

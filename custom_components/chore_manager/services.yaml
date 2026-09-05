@@ -1,0 +1,171 @@
+complete_task:
+  name: Zakończ zadanie
+  description: Zgłasza wykonanie zadania przez członka rodziny. Jeśli wymagana jest akceptacja, zadanie trafia do weryfikacji.
+  fields:
+    user:
+      name: Użytkownik (Sensor)
+      description: ID encji sensora użytkownika (np. sensor.chore_points_adam).
+      required: true
+      example: sensor.chore_points_adam
+      selector:
+        entity:
+          domain: sensor
+    task_id:
+      name: ID Zadania
+      description: Unikalny identyfikator wykonanego zadania.
+      required: true
+      example: odkurzanie
+      selector:
+        text:
+    task_name:
+      name: Nazwa Zadania
+      description: Czytelna nazwa zadania.
+      required: false
+      example: Odkurzanie salonu
+      selector:
+        text:
+    points:
+      name: Punkty
+      description: Liczba punktów do przyznania.
+      required: true
+      default: 10
+      example: 15
+      selector:
+        number:
+          min: 1
+          max: 500
+    requires_approval:
+      name: Wymaga akceptacji
+      description: Czy zadanie wymaga potwierdzenia przez rodzica przed przyznaniem punktów.
+      required: false
+      default: false
+      selector:
+        boolean:
+
+approve_task:
+  name: Zatwierdź zadanie
+  description: Akceptuje zgłoszone zadanie i przyznaje punkty podopiecznemu.
+  fields:
+    user:
+      name: Użytkownik (Sensor)
+      description: ID encji sensora użytkownika.
+      required: true
+      example: sensor.chore_points_adam
+      selector:
+        entity:
+          domain: sensor
+    task_id:
+      name: ID Zadania
+      description: ID zadania do zatwierdzenia.
+      required: true
+      example: odkurzanie
+      selector:
+        text:
+    points:
+      name: Punkty
+      description: Punkty do przyznania.
+      required: true
+      default: 10
+      example: 10
+      selector:
+        number:
+          min: 1
+          max: 500
+
+reject_task:
+  name: Odrzuć zadanie
+  description: Odrzuca zgłoszone zadanie (np. zrobione niestarannie) bez przyznawania punktów.
+  fields:
+    user:
+      name: Użytkownik (Sensor)
+      description: ID encji sensora użytkownika.
+      required: true
+      example: sensor.chore_points_adam
+      selector:
+        entity:
+          domain: sensor
+    task_id:
+      name: ID Zadania
+      description: ID zadania.
+      required: true
+      example: odkurzanie
+      selector:
+        text:
+    reason:
+      name: Powód odrzucenia
+      description: Informacja dla dziecka, co poprawić.
+      required: false
+      example: Pokój nie został dokładnie zamieciony
+      selector:
+        text:
+
+claim_reward:
+  name: Odbierz nagrodę
+  description: Potrąca punkty i oznacza odbiór nagrody ze sklepu.
+  fields:
+    user:
+      name: Użytkownik (Sensor)
+      description: ID encji sensora użytkownika.
+      required: true
+      example: sensor.chore_points_adam
+      selector:
+        entity:
+          domain: sensor
+    reward_id:
+      name: ID Nagrody
+      description: Unikalne ID nagrody.
+      required: true
+      example: kino
+      selector:
+        text:
+    reward_name:
+      name: Nazwa Nagrody
+      description: Czytelna nazwa nagrody.
+      required: false
+      example: Wyjście do kina
+      selector:
+        text:
+    cost:
+      name: Koszt w punktach
+      description: Ile punktów odjąć z konta użytkownika.
+      required: true
+      example: 100
+      selector:
+        number:
+          min: 1
+          max: 5000
+
+add_points:
+  name: Dodaj / Odejmij punkty ręcznie
+  description: Manualna korekta punktów (dodatnia lub ujemna).
+  fields:
+    user:
+      name: Użytkownik (Sensor)
+      description: ID encji sensora użytkownika.
+      required: true
+      example: sensor.chore_points_adam
+      selector:
+        entity:
+          domain: sensor
+    points:
+      name: Ilość punktów (może być ujemna)
+      description: Wartość punktowa do dodania lub odjęcia.
+      required: true
+      example: 25
+      selector:
+        number:
+          min: -1000
+          max: 1000
+
+reset_points:
+  name: Zresetuj punkty do zera
+  description: Zeruje stan punktów użytkownika (np. na początek nowego miesiąca).
+  fields:
+    user:
+      name: Użytkownik (Sensor)
+      description: ID encji sensora użytkownika.
+      required: true
+      example: sensor.chore_points_adam
+      selector:
+        entity:
+          domain: sensor
