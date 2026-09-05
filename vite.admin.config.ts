@@ -14,6 +14,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, '.'),
     },
   },
+  // React (i inne zależności) odwołują się do process.env.NODE_ENV. W trybie
+  // "app" Vite podstawia to automatycznie, ale w trybie biblioteki (IIFE dla
+  // przeglądarki, bez Node.js) trzeba to podać jawnie, inaczej skrypt wywala
+  // się w przeglądarce z "process is not defined" i nic się nie renderuje.
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+  },
   build: {
     emptyOutDir: false,
     cssCodeSplit: false,
