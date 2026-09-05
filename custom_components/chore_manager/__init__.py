@@ -57,7 +57,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_setup_services(hass: HomeAssistant) -> None:
     """Rejestracja usług Home Assistant dla Chore Manager."""
-    if hass.services.has(DOMAIN, SERVICE_COMPLETE_TASK):
+    if hass.services.has_service(DOMAIN, SERVICE_COMPLETE_TASK):
         return
 
     async def handle_complete_task(call: ServiceCall):
