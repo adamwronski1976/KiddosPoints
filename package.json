@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build:card": "esbuild src/chore-manager-card.ts --bundle --outfile=public/chore-manager-card.js --format=iife --minify && cp public/chore-manager-card.js lovelace/chore-manager-card.js && cp public/chore-manager-card.js dist/chore-manager-card.js",
-    "build": "npm run build:card && vite build",
+    "build:admin": "vite build --config vite.admin.config.ts",
+    "build": "vite build && npm run build:card && npm run build:admin",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"

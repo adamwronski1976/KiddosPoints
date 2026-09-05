@@ -15,6 +15,7 @@ from .const import (
     SERVICE_CLAIM_REWARD,
     SERVICE_ADD_POINTS,
     SERVICE_RESET_POINTS,
+    SERVICE_UPDATE_CONFIG,
     EVENT_TASK_COMPLETED,
     EVENT_TASK_APPROVED,
     EVENT_TASK_REJECTED,
@@ -25,21 +26,63 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor"]
 
+# Stan startowy magazynu przy pierwszym uruchomieniu integracji: żadnych
+# zahardkodowanych domowników — tylko jedno konto administratora "Gadget".
+DEFAULT_DATA = {
+    "users": [
+        {
+            "id": "gadget",
+            "name": "Gadget",
+            "haEntityId": "sensor.chore_points_gadget",
+            "role": "admin",
+            "requiresApproval": False,
+            "notifyOnNewTask": False,
+            "notifyOnReward": False,
+        }
+    ],
+    "tasks": [],
+    "rewards": [],
+    "taskRows": {},
+    "completions": {},
+    "customRewardCosts": {},
+    "customTaskPoints": {},
+    "computerSlots": {},
+    "customSchedule": {},
+    "pending_approvals": [],
+    "points": {},
+    "history": [],
+}
+
+# Klucze konfiguracji, które panel administracyjny może aktualizować przez
+# usługę update_config. "users" jest obsługiwany osobno (może tworzyć nowe encje).
+_PATCHABLE_KEYS = [
+    "tasks",
+    "rewards",
+    "taskRows",
+    "completions",
+    "customRewardCosts",
+    "customTaskPoints",
+    "computerSlots",
+    "customSchedule",
+]
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Konfiguracja integracji Chore Manager z poziomu configuration.yaml."""
     hass.data.setdefault(DOMAIN, {})
     await _async_setup_services(hass)
     return True
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Konfiguracja integracji Chore Manager z poziomu UI (Config Entry)."""
     hass.data.setdefault(DOMAIN, {})
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    data = await store.async_load() or {
-        "users": {},
-        "pending_approvals": [],
-        "history": [],
-    }
+    data = await store.async_load()
+    if not data:
+        data = {**DEFAULT_DATA}
+        await store.async_save(data)
+
     hass.data[DOMAIN]["store"] = store
     hass.data[DOMAIN]["data"] = data
     hass.data[DOMAIN]["entry"] = entry
@@ -48,12 +91,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Rozładowanie wpisu integracji."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
+
 
 async def _async_setup_services(hass: HomeAssistant) -> None:
     """Rejestracja usług Home Assistant dla Chore Manager."""
@@ -84,8 +129,8 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             }
             if "data" in hass.data.get(DOMAIN, {}):
                 hass.data[DOMAIN]["data"].setdefault("pending_approvals", []).append(submission)
-                if "store" in hass.data[DOMAIN]:
-                    await hass.data[DOMAIN]["store"].async_save(hass.data[DOMAIN]["data"])
+                await _persist(hass)
+                _refresh_pending_sensor(hass)
 
             hass.bus.async_fire(EVENT_TASK_COMPLETED, {
                 "user": user_entity_id,
@@ -97,7 +142,7 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             return
 
         # Przyznanie punktów bezpośrednio
-        _add_points_to_entity(hass, user_entity_id, points)
+        await _add_points_to_entity(hass, user_entity_id, points)
         hass.bus.async_fire(EVENT_TASK_COMPLETED, {
             "user": user_entity_id,
             "task_id": task_id,
@@ -118,10 +163,10 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             hass.data[DOMAIN]["data"]["pending_approvals"] = [
                 p for p in pending if not (p.get("task_id") == task_id and p.get("user") == user_entity_id)
             ]
-            if "store" in hass.data[DOMAIN]:
-                await hass.data[DOMAIN]["store"].async_save(hass.data[DOMAIN]["data"])
+            await _persist(hass)
+            _refresh_pending_sensor(hass)
 
-        _add_points_to_entity(hass, user_entity_id, points)
+        await _add_points_to_entity(hass, user_entity_id, points)
         hass.bus.async_fire(EVENT_TASK_APPROVED, {
             "user": user_entity_id,
             "task_id": task_id,
@@ -141,8 +186,8 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             hass.data[DOMAIN]["data"]["pending_approvals"] = [
                 p for p in pending if not (p.get("task_id") == task_id and p.get("user") == user_entity_id)
             ]
-            if "store" in hass.data[DOMAIN]:
-                await hass.data[DOMAIN]["store"].async_save(hass.data[DOMAIN]["data"])
+            await _persist(hass)
+            _refresh_pending_sensor(hass)
 
         hass.bus.async_fire(EVENT_TASK_REJECTED, {
             "user": user_entity_id,
@@ -172,15 +217,14 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             _LOGGER.warning("Użytkownik %s nie ma wystarczająco punktów (%s < %s)", user_entity_id, current_points, cost)
             return
 
-        new_points = current_points - cost
-        hass.states.async_set(user_entity_id, new_points, user_state.attributes)
+        await _add_points_to_entity(hass, user_entity_id, -cost)
 
         hass.bus.async_fire(EVENT_REWARD_CLAIMED, {
             "user": user_entity_id,
             "reward_id": reward_id,
             "reward_name": reward_name,
             "cost": cost,
-            "remaining_points": new_points
+            "remaining_points": current_points - cost
         })
         _LOGGER.info("Użytkownik %s odebrał nagrodę %s za %s pkt", user_entity_id, reward_name, cost)
 
@@ -188,14 +232,32 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         """Ręczne dodanie lub odjęcie punktów."""
         user_entity_id = call.data.get("user")
         points = call.data.get("points", 0)
-        _add_points_to_entity(hass, user_entity_id, points)
+        await _add_points_to_entity(hass, user_entity_id, points)
 
     async def handle_reset_points(call: ServiceCall):
         """Zresetowanie punktów danego użytkownika do zera."""
         user_entity_id = call.data.get("user")
         user_state = hass.states.get(user_entity_id)
         if user_state:
-            hass.states.async_set(user_entity_id, 0, user_state.attributes)
+            await _set_points_for_entity(hass, user_entity_id, 0)
+
+    async def handle_update_config(call: ServiceCall):
+        """Scala fragment (patch) konfiguracji panelu administracyjnego z magazynem."""
+        patch = call.data.get("patch") or {}
+        if "data" not in hass.data.get(DOMAIN, {}):
+            return
+        data = hass.data[DOMAIN]["data"]
+
+        for key in _PATCHABLE_KEYS:
+            if key in patch:
+                data[key] = patch[key]
+
+        if "users" in patch:
+            await _sync_users(hass, patch["users"])
+            data["users"] = patch["users"]
+
+        await _persist(hass)
+        _refresh_config_sensor(hass)
 
     # Rejestracja wszystkich serwisów
     hass.services.async_register(DOMAIN, SERVICE_COMPLETE_TASK, handle_complete_task)
@@ -204,18 +266,79 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_CLAIM_REWARD, handle_claim_reward)
     hass.services.async_register(DOMAIN, SERVICE_ADD_POINTS, handle_add_points)
     hass.services.async_register(DOMAIN, SERVICE_RESET_POINTS, handle_reset_points)
+    hass.services.async_register(DOMAIN, SERVICE_UPDATE_CONFIG, handle_update_config)
 
-def _add_points_to_entity(hass: HomeAssistant, user_entity_id: str, points: int):
-    """Pomocnicza funkcja do modyfikacji stanu punktów sensora."""
-    user_state = hass.states.get(user_entity_id)
-    current_points = 0
-    attrs = {"icon": "mdi:star-circle", "friendly_name": user_entity_id.replace("sensor.chore_points_", "").capitalize()}
-    if user_state:
+
+async def _persist(hass: HomeAssistant) -> None:
+    """Zapisuje bieżący stan magazynu na dysk."""
+    domain_data = hass.data.get(DOMAIN, {})
+    if "store" in domain_data and "data" in domain_data:
+        await domain_data["store"].async_save(domain_data["data"])
+
+
+def _refresh_pending_sensor(hass: HomeAssistant) -> None:
+    entity = hass.data.get(DOMAIN, {}).get("pending_entity")
+    if entity is not None:
+        entity.async_write_ha_state()
+
+
+def _refresh_config_sensor(hass: HomeAssistant) -> None:
+    entity = hass.data.get(DOMAIN, {}).get("config_entity")
+    if entity is not None:
+        entity.async_write_ha_state()
+
+
+async def _sync_users(hass: HomeAssistant, users: list) -> None:
+    """Tworzy realne, trwałe sensory punktów dla nowo dodanych użytkowników."""
+    add_entities = hass.data.get(DOMAIN, {}).get("sensor_add_entities")
+    points_entities = hass.data.get(DOMAIN, {}).setdefault("points_entities", {})
+
+    new_entities = []
+    for user in users:
+        entity_id = user.get("haEntityId") or f"sensor.chore_points_{user['id']}"
+        user.setdefault("haEntityId", entity_id)
+        if entity_id not in points_entities and add_entities is not None:
+            # Import lokalny, by uniknąć cyklu importów przy starcie integracji.
+            from .sensor import ChorePointsSensor
+            new_entities.append(ChorePointsSensor(hass, user))
+
+    if new_entities:
+        add_entities(new_entities, update_before_add=True)
+
+
+async def _set_points_for_entity(hass: HomeAssistant, user_entity_id: str, points: int) -> None:
+    """Ustawia dokładną wartość punktów danej encji, z zapisem do magazynu."""
+    points = max(0, points)
+    points_entities = hass.data.get(DOMAIN, {}).get("points_entities", {})
+    entity = points_entities.get(user_entity_id)
+    if entity is not None:
+        entity.set_points(points)
+    else:
+        user_state = hass.states.get(user_entity_id)
+        attrs = dict(user_state.attributes) if user_state else {
+            "icon": "mdi:star-circle",
+            "friendly_name": user_entity_id.replace("sensor.chore_points_", "").capitalize(),
+        }
+        hass.states.async_set(user_entity_id, points, attrs)
+
+    domain_data = hass.data.get(DOMAIN, {})
+    if "data" in domain_data:
+        domain_data["data"].setdefault("points", {})[user_entity_id] = points
+        await _persist(hass)
+
+
+async def _add_points_to_entity(hass: HomeAssistant, user_entity_id: str, points: int) -> None:
+    """Pomocnicza funkcja do modyfikacji stanu punktów sensora (z trwałym zapisem)."""
+    points_entities = hass.data.get(DOMAIN, {}).get("points_entities", {})
+    entity = points_entities.get(user_entity_id)
+    if entity is not None:
+        current_points = entity.native_value or 0
+    else:
+        user_state = hass.states.get(user_entity_id)
         try:
-            current_points = int(user_state.state)
+            current_points = int(user_state.state) if user_state else 0
         except ValueError:
             current_points = 0
-        attrs = dict(user_state.attributes)
 
     new_points = max(0, current_points + points)
-    hass.states.async_set(user_entity_id, new_points, attrs)
+    await _set_points_for_entity(hass, user_entity_id, new_points)

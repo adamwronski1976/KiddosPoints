@@ -17,6 +17,7 @@ SERVICE_REJECT_TASK = "reject_task"
 SERVICE_CLAIM_REWARD = "claim_reward"
 SERVICE_ADD_POINTS = "add_points"
 SERVICE_RESET_POINTS = "reset_points"
+SERVICE_UPDATE_CONFIG = "update_config"
 
 # Nazwy zdarzeń (Events)
 EVENT_TASK_COMPLETED = "chore_manager_task_completed"

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useAppStore } from './store';
+import { useHaConfigStore, HomeAssistantLike } from './haStore';
 import { Summary } from './components/Summary';
 import { Schedule } from './components/Schedule';
 import { Rewards } from './components/Rewards';
@@ -8,16 +9,26 @@ import { UserManagement } from './components/UserManagement';
 import { DownloadCloud, UploadCloud, LayoutDashboard, Settings, Github, Copy, CheckCircle2, ShieldCheck, Terminal } from 'lucide-react';
 import './chore-manager-card';
 
-export default function App() {
+const NO_HASS: HomeAssistantLike = { states: {}, callService: () => {} };
+
+interface AppProps {
+  /** Prawdziwy obiekt hass, gdy panel jest osadzony w Home Assistant.
+   *  Bez niego (np. `npm run dev`) panel działa na lokalnym mocku. */
+  hass?: HomeAssistantLike;
+}
+
+export default function App({ hass }: AppProps) {
   const cardRef = useRef<HTMLElement>(null);
-  const { 
-    state, 
+  const localStore = useAppStore();
+  const haStore = useHaConfigStore(hass ?? NO_HASS);
+  const {
+    state,
     addTask,
     addReward,
-    addTaskRow, 
-    updateTaskRowPerson, 
-    removeTaskRow, 
-    toggleCompletion, 
+    addTaskRow,
+    updateTaskRowPerson,
+    removeTaskRow,
+    toggleCompletion,
     toggleWeeklyPattern,
     updateRewardCost,
     updateTaskPoints,
@@ -30,8 +41,8 @@ export default function App() {
     addUser,
     updateUser,
     removeUser
-  } = useAppStore();
-  
+  } = hass ? haStore : localStore;
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'admin' | 'lovelace' | 'github'>('admin');
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
@@ -132,7 +143,7 @@ export default function App() {
         rewards: state.rewards.map(r => ({
           ...r,
           title: r.name,
-          cost: state.customRewardCosts[r.id] !== undefined ? state.customRewardCosts[r.id] : (r.cost ?? r.points)
+          cost: state.customRewardCosts[r.id] !== undefined ? state.customRewardCosts[r.id] : r.points
         }))
       }
     };
@@ -236,9 +247,9 @@ export default function App() {
         show_rewards: true,
         show_pc_time: true
       });
-      card.hass = hassMock;
+      card.hass = hass ?? hassMock;
     }
-  }, [hassMock, activeTab]);
+  }, [hass, hassMock, activeTab]);
 
   const handleExportBackup = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));

@@ -169,3 +169,21 @@ reset_points:
       selector:
         entity:
           domain: sensor
+
+update_config:
+  name: Zaktualizuj konfigurację
+  description: >-
+    Scala fragment konfiguracji panelu administracyjnego (użytkownicy, zadania,
+    nagrody, harmonogram) z magazynem integracji. Używane przez panel
+    zarządzania (SPA) zamiast lokalnego przechowywania w przeglądarce.
+  fields:
+    patch:
+      name: Fragment konfiguracji
+      description: >-
+        Obiekt z dowolną kombinacją kluczy: users, tasks, rewards, taskRows,
+        completions, customRewardCosts, customTaskPoints, computerSlots,
+        customSchedule. Podany klucz zastępuje całą odpowiadającą mu wartość.
+      required: true
+      example: '{"tasks": [{"id": "t1", "name": "Zmywarka", "points": 10}]}'
+      selector:
+        object:
