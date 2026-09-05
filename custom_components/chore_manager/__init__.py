@@ -24,7 +24,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "todo"]
 
 # Stan startowy magazynu przy pierwszym uruchomieniu integracji: żadnych
 # zahardkodowanych domowników — tylko jedno konto administratora "Gadget".
@@ -258,6 +258,8 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
 
         await _persist(hass)
         _refresh_config_sensor(hass)
+        if "tasks" in patch or "taskRows" in patch or "users" in patch:
+            _refresh_todo_entity(hass)
 
     # Rejestracja wszystkich serwisów
     hass.services.async_register(DOMAIN, SERVICE_COMPLETE_TASK, handle_complete_task)
@@ -284,6 +286,12 @@ def _refresh_pending_sensor(hass: HomeAssistant) -> None:
 
 def _refresh_config_sensor(hass: HomeAssistant) -> None:
     entity = hass.data.get(DOMAIN, {}).get("config_entity")
+    if entity is not None:
+        entity.async_write_ha_state()
+
+
+def _refresh_todo_entity(hass: HomeAssistant) -> None:
+    entity = hass.data.get(DOMAIN, {}).get("todo_entity")
     if entity is not None:
         entity.async_write_ha_state()
 
