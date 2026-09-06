@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval, Task, Reward } from './types';
+import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval, Task, Reward, OverdueItem } from './types';
 
 const CONFIG_ENTITY = 'sensor.chore_manager_config';
 const HISTORY_ENTITY = 'sensor.chore_manager_history';
 const PENDING_ENTITY = 'sensor.chore_manager_pending_approvals';
+const OVERDUE_ENTITY = 'sensor.chore_manager_overdue';
 
 export interface HomeAssistantLike {
   states: Record<string, { state: string; attributes: Record<string, any> }>;
@@ -27,6 +28,7 @@ interface HaAppState {
   customSchedule: Record<string, boolean>;
   history: HistoryEntry[];
   pendingApprovals: PendingApproval[];
+  overdue: OverdueItem[];
 }
 
 const EMPTY_STATE: HaAppState = {
@@ -39,6 +41,7 @@ const EMPTY_STATE: HaAppState = {
   customSchedule: {},
   history: [],
   pendingApprovals: [],
+  overdue: [],
 };
 
 /**
@@ -53,6 +56,7 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     const attrs = hass.states[CONFIG_ENTITY]?.attributes;
     const historyItems = hass.states[HISTORY_ENTITY]?.attributes?.items;
     const pendingItems = hass.states[PENDING_ENTITY]?.attributes?.items;
+    const overdueItems = hass.states[OVERDUE_ENTITY]?.attributes?.items;
     if (!attrs) return EMPTY_STATE;
     return {
       users: attrs.users || [],
@@ -64,8 +68,9 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
       customSchedule: attrs.customSchedule || {},
       history: historyItems || [],
       pendingApprovals: pendingItems || [],
+      overdue: overdueItems || [],
     };
-  }, [hass.states[CONFIG_ENTITY], hass.states[HISTORY_ENTITY], hass.states[PENDING_ENTITY]]);
+  }, [hass.states[CONFIG_ENTITY], hass.states[HISTORY_ENTITY], hass.states[PENDING_ENTITY], hass.states[OVERDUE_ENTITY]]);
 
   const patch = (partial: Record<string, any>) => {
     hass.callService('chore_manager', 'update_config', { patch: partial });

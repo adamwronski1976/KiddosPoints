@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { User, Task, TaskRow, Completions, HistoryEntry, PendingApproval, Reward, Person } from '../types';
+import { User, Task, TaskRow, Completions, HistoryEntry, PendingApproval, Reward, Person, OverdueItem } from '../types';
 import { HomeAssistantLike } from '../haStore';
 import { UserSettingsForm } from './UserSettingsForm';
 import { UserPanel } from './UserPanel';
@@ -26,6 +26,7 @@ interface Props {
   rewards: Reward[];
   history: HistoryEntry[];
   pendingApprovals: PendingApproval[];
+  overdue?: OverdueItem[];
   hass?: HomeAssistantLike;
   onAddUser: (user: Omit<User, 'id'>) => void;
   onUpdateUser: (id: string, updates: Partial<User>) => void;
@@ -51,7 +52,7 @@ interface Props {
  *  domownik od razu widzi tylko swój panel, bez możliwości przełączenia się
  *  na kogoś innego. */
 export const UserPanelHub: React.FC<Props> = ({
-  users, tasks, taskRows, completions, customSchedule, rewards, history, pendingApprovals, hass,
+  users, tasks, taskRows, completions, customSchedule, rewards, history, pendingApprovals, overdue = [], hass,
   onAddUser, onUpdateUser, onRemoveUser,
   onAddRow, onUpdateRow, onRemoveRow, onToggleCompletion, onToggleWeeklyPattern, onToggleCustomSchedule,
   onReset, onAssign, pointActions
@@ -97,6 +98,7 @@ export const UserPanelHub: React.FC<Props> = ({
     rewards,
     history,
     pendingApprovals,
+    overdue,
     hass,
     onAddRow,
     onUpdateRow,
@@ -175,7 +177,7 @@ export const UserPanelHub: React.FC<Props> = ({
       )}
 
       {!isAdding && selectedId === '' && (
-        <Summary users={users} tasks={tasks} taskRows={taskRows} completions={completions} />
+        <Summary users={users} tasks={tasks} taskRows={taskRows} completions={completions} overdue={overdue} />
       )}
 
       {!isAdding && selectedUser && (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TaskRow, Completions, Person, Task, Reward, User, HistoryEntry, PendingApproval } from './types';
+import { TaskRow, Completions, Person, Task, Reward, User, HistoryEntry, PendingApproval, OverdueItem } from './types';
 import { TASKS, REWARDS } from './data';
 
 interface AppState {
@@ -16,6 +16,8 @@ interface AppState {
   history: HistoryEntry[];
   /** Zawsze pusta lokalnie — kolejka akceptacji żyje tylko po stronie HA. */
   pendingApprovals: PendingApproval[];
+  /** Zawsze pusta lokalnie — zaległości liczy tylko backend HA (occurrences). */
+  overdue: OverdueItem[];
 }
 
 const DEFAULT_USERS: User[] = [
@@ -37,7 +39,8 @@ const DEFAULT_STATE: AppState = {
   computerSlots: {},
   customSchedule: {},
   history: [],
-  pendingApprovals: []
+  pendingApprovals: [],
+  overdue: []
 };
 
 export function useAppStore() {

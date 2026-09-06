@@ -1,7 +1,9 @@
 """Obsługa sensorów punktacji i konfiguracji w Home Assistant."""
+from datetime import date
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from .const import DOMAIN
 
 
@@ -30,6 +32,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities.append(ChorePendingCountSensor())
     entities.append(ChoreConfigSensor())
     entities.append(ChoreHistorySensor())
+    entities.append(ChoreOverdueSensor())
     async_add_entities(entities, update_before_add=True)
 
 
@@ -44,6 +47,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     entities.append(ChorePendingCountSensor())
     entities.append(ChoreConfigSensor())
     entities.append(ChoreHistorySensor())
+    entities.append(ChoreOverdueSensor())
     async_add_entities(entities)
 
 
@@ -206,3 +210,61 @@ class ChoreHistorySensor(SensorEntity):
         # Najnowsze first - wygodniejsze do wyświetlenia w panelu bez sortowania.
         items = list(reversed(data.get("history", [])))
         return {"items": items}
+
+
+class ChoreOverdueSensor(SensorEntity):
+    """Jeden sensor zaległości dla całej rodziny: stan = łączna liczba
+    przeterminowanych wystąpień, a atrybut `items` zawiera pełną listę z polem
+    `user`/`user_name` na każdej pozycji - dzięki temu panel może pokazać
+    zarówno widok "wszyscy" (cały sensor), jak i "per user" (filtr po stronie
+    frontendu), bez potrzeby osobnego sensora na każdą osobę."""
+
+    _attr_name = "KiddosPoints - Zaległości"
+    _attr_unique_id = "chore_manager_overdue"
+    _attr_icon = "mdi:calendar-alert"
+    _attr_native_unit_of_measurement = "zadań"
+
+    def __init__(self):
+        self.entity_id = "sensor.chore_manager_overdue"
+
+    async def async_added_to_hass(self):
+        self.hass.data.setdefault(DOMAIN, {})["overdue_entity"] = self
+
+    def _overdue_items(self) -> list:
+        if not self.hass:
+            return []
+        data = _stored_data(self.hass)
+        today = dt_util.now().date()
+        users_by_id = {u["id"]: u for u in data.get("users", [])}
+        tasks_by_id = {t["id"]: t for t in data.get("tasks", [])}
+        items = []
+        for occ_id, occ in data.get("occurrences", {}).items():
+            if occ.get("status") != "open" or occ.get("adhoc") or not occ.get("due"):
+                continue
+            try:
+                due = date.fromisoformat(occ["due"])
+            except ValueError:
+                continue
+            if due >= today:
+                continue
+            user = users_by_id.get(occ.get("person"), {})
+            task = tasks_by_id.get(occ.get("task_id"), {})
+            items.append({
+                "id": occ_id,
+                "user": user.get("haEntityId"),
+                "user_name": user.get("name", occ.get("person")),
+                "task_id": occ.get("task_id"),
+                "task_name": task.get("name", occ.get("task_id")),
+                "due": occ.get("due"),
+                "days_overdue": (today - due).days,
+            })
+        items.sort(key=lambda i: i["days_overdue"], reverse=True)
+        return items
+
+    @property
+    def native_value(self):
+        return len(self._overdue_items())
+
+    @property
+    def extra_state_attributes(self):
+        return {"items": self._overdue_items()}

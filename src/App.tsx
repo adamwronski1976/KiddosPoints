@@ -422,6 +422,7 @@ export default function App({ hass }: AppProps) {
               rewards={state.rewards}
               history={state.history}
               pendingApprovals={state.pendingApprovals}
+              overdue={state.overdue}
               hass={hass}
               onAddUser={addUser}
               onUpdateUser={updateUser}
@@ -455,6 +456,7 @@ export default function App({ hass }: AppProps) {
                 tasks={state.tasks}
                 taskRows={state.taskRows}
                 completions={state.completions}
+                overdue={state.overdue}
               />
             </section>
 

@@ -1,10 +1,13 @@
 """Główny moduł integracji Chore Manager w Home Assistant."""
 import logging
 import time
+import uuid
+from datetime import date, timedelta
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.util import dt as dt_util
 from .const import (
     DOMAIN,
@@ -54,6 +57,10 @@ DEFAULT_DATA = {
     "pending_approvals": [],
     "points": {},
     "history": [],
+    # Konkretne, wyznaczone-z-terminem wystąpienia cyklicznych przypisań
+    # z Harmonogramu (patrz _ensure_occurrences) - jedna aktywna pozycja na
+    # przypisanie na raz ("leniwe" generowanie, bez nieskończonej listy).
+    "occurrences": {},
 }
 
 # Klucze konfiguracji, które panel administracyjny może aktualizować przez
@@ -89,13 +96,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data.pop("customTaskPoints", None)
         data.pop("customRewardCosts", None)
         data.setdefault("history", [])
+        data.setdefault("occurrences", {})
 
     hass.data[DOMAIN]["store"] = store
     hass.data[DOMAIN]["data"] = data
     hass.data[DOMAIN]["entry"] = entry
+    hass.data[DOMAIN].setdefault("pending_awards", {})
 
     await _async_setup_services(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    await _ensure_occurrences(hass)
+    unsub = async_track_time_change(
+        hass, lambda now: hass.async_create_task(_ensure_occurrences(hass)),
+        hour=0, minute=5, second=0,
+    )
+    hass.data[DOMAIN]["occurrence_timer_unsub"] = unsub
     return True
 
 
@@ -103,6 +119,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Rozładowanie wpisu integracji."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        unsub = hass.data[DOMAIN].get("occurrence_timer_unsub")
+        if unsub:
+            unsub()
+        for cancel in hass.data[DOMAIN].get("pending_awards", {}).values():
+            cancel()
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
 
@@ -164,14 +185,22 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         task_id = call.data.get("task_id")
         points = call.data.get("points", 10)
 
-        # Usunięcie z kolejki oczekujących
+        # Usunięcie z kolejki oczekujących (i powiązanego wystąpienia w todo, jeśli jest)
+        removed = []
         if "data" in hass.data.get(DOMAIN, {}):
-            pending = hass.data[DOMAIN]["data"].get("pending_approvals", [])
-            hass.data[DOMAIN]["data"]["pending_approvals"] = [
-                p for p in pending if not (p.get("task_id") == task_id and p.get("user") == user_entity_id)
-            ]
+            data = hass.data[DOMAIN]["data"]
+            pending = data.get("pending_approvals", [])
+            removed = [p for p in pending if p.get("task_id") == task_id and p.get("user") == user_entity_id]
+            data["pending_approvals"] = [p for p in pending if p not in removed]
+            for p in removed:
+                occ_id = p.get("occurrence_id")
+                if occ_id and occ_id in data.get("occurrences", {}):
+                    del data["occurrences"][occ_id]
             await _persist(hass)
             _refresh_pending_sensor(hass)
+            if any(p.get("occurrence_id") for p in removed):
+                _refresh_todo_entities(hass)
+                _refresh_overdue_sensor(hass)
 
         task_name = _task_name(hass, task_id) or task_id
         await _add_points_to_entity(hass, user_entity_id, points, reason=f"Zatwierdzono: {task_name}")
@@ -188,14 +217,23 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         task_id = call.data.get("task_id")
         reason = call.data.get("reason", "Niewykonane poprawnie")
 
-        # Usunięcie z kolejki oczekujących
+        # Usunięcie z kolejki oczekujących - powiązane wystąpienie (jeśli jest)
+        # wraca na aktywną listę todo, NIGDY nie znika bezpowrotnie.
         if "data" in hass.data.get(DOMAIN, {}):
-            pending = hass.data[DOMAIN]["data"].get("pending_approvals", [])
-            hass.data[DOMAIN]["data"]["pending_approvals"] = [
-                p for p in pending if not (p.get("task_id") == task_id and p.get("user") == user_entity_id)
-            ]
+            data = hass.data[DOMAIN]["data"]
+            pending = data.get("pending_approvals", [])
+            removed = [p for p in pending if p.get("task_id") == task_id and p.get("user") == user_entity_id]
+            data["pending_approvals"] = [p for p in pending if p not in removed]
+            for p in removed:
+                occ_id = p.get("occurrence_id")
+                occ = data.get("occurrences", {}).get(occ_id) if occ_id else None
+                if occ:
+                    occ["status"] = "open"
             await _persist(hass)
             _refresh_pending_sensor(hass)
+            if any(p.get("occurrence_id") for p in removed):
+                _refresh_todo_entities(hass)
+                _refresh_overdue_sensor(hass)
 
         hass.bus.async_fire(EVENT_TASK_REJECTED, {
             "user": user_entity_id,
@@ -291,7 +329,9 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         await _persist(hass)
         _refresh_config_sensor(hass)
         if "tasks" in patch or "taskRows" in patch or "users" in patch:
-            _refresh_todo_entity(hass)
+            _refresh_todo_entities(hass)
+        if "taskRows" in patch or "completions" in patch:
+            await _ensure_occurrences(hass)
 
     # Rejestracja wszystkich serwisów
     hass.services.async_register(DOMAIN, SERVICE_COMPLETE_TASK, handle_complete_task)
@@ -353,8 +393,16 @@ def _refresh_config_sensor(hass: HomeAssistant) -> None:
         entity.async_write_ha_state()
 
 
-def _refresh_todo_entity(hass: HomeAssistant) -> None:
-    entity = hass.data.get(DOMAIN, {}).get("todo_entity")
+def _refresh_todo_entities(hass: HomeAssistant) -> None:
+    domain_data = hass.data.get(DOMAIN, {})
+    for key in ("todo_entity", "pending_todo_entity"):
+        entity = domain_data.get(key)
+        if entity is not None:
+            entity.async_write_ha_state()
+
+
+def _refresh_overdue_sensor(hass: HomeAssistant) -> None:
+    entity = hass.data.get(DOMAIN, {}).get("overdue_entity")
     if entity is not None:
         entity.async_write_ha_state()
 
@@ -573,3 +621,200 @@ async def _add_points_to_entity(hass: HomeAssistant, user_entity_id: str, points
 
     new_points = max(0, current_points + points)
     await _set_points_for_entity(hass, user_entity_id, new_points, reason=reason)
+
+
+# ---------------------------------------------------------------------------
+# Wystąpienia zadań (occurrences): łączenie Harmonogramu z natywną listą todo
+# ---------------------------------------------------------------------------
+# Każda cyklicznie przypisana pozycja Harmonogramu (dzień tygodnia zaznaczony
+# w widoku "Tygodniowy" - dokładnie te same checkboxy co dotąd) dostaje
+# dokładnie JEDNO aktywne, terminowe wystąpienie na liście "todo.chore_tasks".
+# Kolejne wystąpienie generuje się dopiero, gdy poprzednie zostanie
+# rozstrzygnięte (zatwierdzone/odrzucone) - bez generowania listy w nieskończoność.
+UNDO_WINDOW_SECONDS = 60
+
+
+def _next_weekday_date(from_date: "date", weekdays: set) -> "date":
+    """Najbliższa data (>= from_date) wypadająca na jeden z podanych dni
+    tygodnia (1=Pn ... 7=Nd, zgodnie z resztą modułu - patrz _DAY_NAMES)."""
+    for offset in range(0, 8):
+        candidate = from_date + timedelta(days=offset)
+        if (candidate.weekday() + 1) in weekdays:
+            return candidate
+    return from_date
+
+
+async def _ensure_occurrences(hass: HomeAssistant) -> None:
+    """Dogenerowuje brakujące wystąpienia dla każdego cyklicznego przypisania
+    z Harmonogramu (jedno aktywne wystąpienie naraz na przypisanie)."""
+    domain_data = hass.data.get(DOMAIN, {})
+    if "data" not in domain_data:
+        return
+    data = domain_data["data"]
+    occurrences = data.setdefault("occurrences", {})
+    today = dt_util.now().date()
+
+    active_by_row: dict[str, bool] = {}
+    for occ in occurrences.values():
+        if occ.get("adhoc"):
+            continue
+        if occ.get("status") in ("open", "pending_approval", "awaiting_award"):
+            active_by_row[occ.get("row_id")] = True
+
+    changed = False
+    for task in data.get("tasks", []):
+        task_id = task.get("id")
+        for row in data.get("taskRows", {}).get(task_id, []):
+            person = row.get("person")
+            row_id = row.get("id")
+            if not person or not row_id or active_by_row.get(row_id):
+                continue
+            weekdays = {d for d in range(1, 8) if data.get("completions", {}).get(f"{row_id}_{d}")}
+            if not weekdays:
+                continue
+            due = _next_weekday_date(today, weekdays)
+            occ_id = f"occ_{row_id}_{due.isoformat()}"
+            if occ_id in occurrences:
+                continue
+            occurrences[occ_id] = {
+                "id": occ_id,
+                "task_id": task_id,
+                "row_id": row_id,
+                "person": person,
+                "due": due.isoformat(),
+                "status": "open",
+                "created": dt_util.utcnow().isoformat(),
+            }
+            active_by_row[row_id] = True
+            changed = True
+
+    if changed:
+        await _persist(hass)
+    _refresh_todo_entities(hass)
+    _refresh_overdue_sensor(hass)
+
+
+def _occurrence_context(hass: HomeAssistant, occ_id: str):
+    """Zwraca (data, occ, task, user) dla danego wystąpienia, albo None jeśli
+    nie istnieje/jest niespójne."""
+    data = hass.data.get(DOMAIN, {}).get("data")
+    if not data:
+        return None
+    occ = data.get("occurrences", {}).get(occ_id)
+    if not occ:
+        return None
+    task = next((t for t in data.get("tasks", []) if t.get("id") == occ.get("task_id")), None)
+    user = next((u for u in data.get("users", []) if u.get("id") == occ.get("person")), None)
+    if not task or not user:
+        return None
+    return data, occ, task, user
+
+
+async def _complete_occurrence(hass: HomeAssistant, occ_id: str) -> None:
+    """Odhaczenie wystąpienia na aktywnej liście todo. Dla osób wymagających
+    akceptacji przenosi je natychmiast na listę "Do zatwierdzenia" (przegląd
+    rodzica pełni tu rolę zabezpieczenia). Dla pozostałych daje 60 sekund na
+    cofnięcie (odznaczenie z powrotem), zanim punkty faktycznie się naliczą -
+    ochrona przed przypadkowym kliknięciem."""
+    ctx = _occurrence_context(hass, occ_id)
+    if not ctx:
+        return
+    data, occ, task, user = ctx
+    task_name = task.get("name", occ.get("task_id"))
+
+    if user.get("requiresApproval"):
+        occ["status"] = "pending_approval"
+        submission = {
+            "id": f"sub_{occ_id}",
+            "user": user.get("haEntityId"),
+            "task_id": occ.get("task_id"),
+            "task_name": task_name,
+            "points": task.get("points", 0),
+            "occurrence_id": occ_id,
+        }
+        data.setdefault("pending_approvals", []).append(submission)
+        await _persist(hass)
+        _refresh_pending_sensor(hass)
+        _refresh_todo_entities(hass)
+        _refresh_overdue_sensor(hass)
+        hass.bus.async_fire(EVENT_TASK_COMPLETED, {
+            "user": user.get("haEntityId"),
+            "task_id": occ.get("task_id"),
+            "task_name": task_name,
+            "points": task.get("points", 0),
+            "status": "pending_approval",
+        })
+        return
+
+    occ["status"] = "awaiting_award"
+    await _persist(hass)
+    _refresh_todo_entities(hass)
+
+    async def _finalize(_now) -> None:
+        hass.data.get(DOMAIN, {}).get("pending_awards", {}).pop(occ_id, None)
+        ctx2 = _occurrence_context(hass, occ_id)
+        if not ctx2:
+            return
+        data2, occ2, task2, user2 = ctx2
+        if occ2.get("status") != "awaiting_award":
+            return
+        del data2["occurrences"][occ_id]
+        await _persist(hass)
+        _refresh_todo_entities(hass)
+        _refresh_overdue_sensor(hass)
+        await _add_points_to_entity(hass, user2.get("haEntityId"), task2.get("points", 0), reason=f"Zadanie: {task2.get('name')}")
+        hass.bus.async_fire(EVENT_TASK_COMPLETED, {
+            "user": user2.get("haEntityId"),
+            "task_id": occ2.get("task_id"),
+            "task_name": task2.get("name"),
+            "points": task2.get("points", 0),
+            "status": "approved",
+        })
+
+    cancel = async_call_later(hass, UNDO_WINDOW_SECONDS, _finalize)
+    hass.data.setdefault(DOMAIN, {}).setdefault("pending_awards", {})[occ_id] = cancel
+
+
+async def _uncomplete_occurrence(hass: HomeAssistant, occ_id: str) -> None:
+    """Odznaczenie z powrotem w oknie 60 sekund - anuluje zaplanowane naliczenie
+    punktów i przywraca wystąpienie jako otwarte."""
+    cancel = hass.data.get(DOMAIN, {}).get("pending_awards", {}).pop(occ_id, None)
+    if cancel:
+        cancel()
+    data = hass.data.get(DOMAIN, {}).get("data")
+    if not data:
+        return
+    occ = data.get("occurrences", {}).get(occ_id)
+    if occ and occ.get("status") == "awaiting_award":
+        occ["status"] = "open"
+        await _persist(hass)
+        _refresh_todo_entities(hass)
+
+
+async def _create_adhoc_occurrence(hass: HomeAssistant, summary: str) -> None:
+    """Dodanie doraźnej pozycji przez natywny UI todo (Assist itp.) - poza
+    systemem punktów, nie jest powiązana z żadnym zadaniem/osobą."""
+    data = hass.data.get(DOMAIN, {}).get("data")
+    if data is None:
+        return
+    occ_id = f"occ_adhoc_{uuid.uuid4().hex[:8]}"
+    data.setdefault("occurrences", {})[occ_id] = {
+        "id": occ_id,
+        "adhoc": True,
+        "summary": summary,
+        "status": "open",
+        "created": dt_util.utcnow().isoformat(),
+    }
+    await _persist(hass)
+    _refresh_todo_entities(hass)
+
+
+async def _delete_occurrence(hass: HomeAssistant, occ_id: str) -> None:
+    data = hass.data.get(DOMAIN, {}).get("data")
+    if not data:
+        return
+    if occ_id in data.get("occurrences", {}):
+        del data["occurrences"][occ_id]
+        await _persist(hass)
+        _refresh_todo_entities(hass)
+        _refresh_overdue_sensor(hass)

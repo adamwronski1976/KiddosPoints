@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { User, Task, TaskRow, Completions, HistoryEntry, PendingApproval, Reward, Person } from '../types';
+import { User, Task, TaskRow, Completions, HistoryEntry, PendingApproval, Reward, Person, OverdueItem } from '../types';
 import { HomeAssistantLike } from '../haStore';
 import { Schedule } from './Schedule';
 import { HistoryLog } from './HistoryLog';
 import { UserSettingsForm } from './UserSettingsForm';
 import { MdiIcon } from './MdiIcon';
 import {
-  Shield, ShieldAlert, Star, Gift, ClipboardList, ClipboardCheck,
+  Shield, ShieldAlert, Star, Gift, ClipboardList, ClipboardCheck, CalendarClock,
   CheckCircle2, XCircle, PlusCircle, MinusCircle, RotateCcw, Link2, Settings2, Trash2
 } from 'lucide-react';
 
@@ -20,6 +20,7 @@ interface Props {
   rewards: Reward[];
   history: HistoryEntry[];
   pendingApprovals: PendingApproval[];
+  overdue?: OverdueItem[];
   hass?: HomeAssistantLike;
   onAddRow: (taskId: string) => void;
   onUpdateRow: (taskId: string, rowId: string, person: Person) => void;
@@ -40,7 +41,7 @@ interface Props {
 }
 
 export const UserPanel: React.FC<Props> = ({
-  user, users, tasks, taskRows, completions, customSchedule, rewards, history, pendingApprovals, hass,
+  user, users, tasks, taskRows, completions, customSchedule, rewards, history, pendingApprovals, overdue = [], hass,
   onAddRow, onUpdateRow, onRemoveRow, onToggleCompletion, onToggleWeeklyPattern, onToggleCustomSchedule,
   onReset, onAssign, onUpdateUser, onRemoveUser, pointActions
 }) => {
@@ -64,6 +65,11 @@ export const UserPanel: React.FC<Props> = ({
   const myPending = useMemo(
     () => pendingApprovals.filter(p => p.user === user.haEntityId),
     [pendingApprovals, user.haEntityId]
+  );
+
+  const myOverdue = useMemo(
+    () => overdue.filter(o => o.user === user.haEntityId),
+    [overdue, user.haEntityId]
   );
 
   const myHistory = useMemo(
@@ -120,6 +126,11 @@ export const UserPanel: React.FC<Props> = ({
                 <ClipboardCheck className="w-4 h-4" /> {myPending.length} do zatwierdzenia
               </span>
             )}
+            {myOverdue.length > 0 && (
+              <span className="text-red-600 font-semibold flex items-center gap-1">
+                <CalendarClock className="w-4 h-4" /> {myOverdue.length} zaległych
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-4 flex-shrink-0">
@@ -172,6 +183,24 @@ export const UserPanel: React.FC<Props> = ({
                 Zapisz zmiany
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ZALEGŁE ZADANIA - nie znikają, tylko czekają na wykonanie na liście todo.chore_tasks */}
+      {myOverdue.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
+          <div className="bg-red-50 px-5 py-3 border-b border-red-200 flex items-center gap-2">
+            <CalendarClock className="w-5 h-5 text-red-600" />
+            <h3 className="font-semibold text-slate-800">Zaległe zadania ({myOverdue.length})</h3>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {myOverdue.map(o => (
+              <div key={o.id} className="flex items-center justify-between px-5 py-2.5 text-sm">
+                <span className="text-slate-700">{o.task_name}</span>
+                <span className="text-red-600 font-semibold text-xs">{o.days_overdue} dni po terminie</span>
+              </div>
+            ))}
           </div>
         </div>
       )}

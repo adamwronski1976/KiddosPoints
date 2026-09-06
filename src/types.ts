@@ -40,6 +40,17 @@ export interface HistoryEntry {
   new_total?: number;
 }
 
+export interface OverdueItem {
+  id: string;
+  /** entity_id sensora punktów użytkownika */
+  user: string;
+  user_name: string;
+  task_id: string;
+  task_name: string;
+  due: string;
+  days_overdue: number;
+}
+
 export type Person = string;
 
 export interface Task {
