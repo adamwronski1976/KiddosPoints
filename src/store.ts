@@ -69,20 +69,20 @@ export function useAppStore() {
     localStorage.setItem('domowy-manager-state-v3', JSON.stringify(state));
   }, [state]);
 
-  const addTask = (name: string, points: number) => {
+  const addTask = (task: Omit<Task, 'id'>) => {
     const newId = `t_custom_${Date.now()}`;
     setState(prev => ({
       ...prev,
-      tasks: [...prev.tasks, { id: newId, name, points }],
+      tasks: [...prev.tasks, { ...task, id: newId }],
       taskRows: { ...prev.taskRows, [newId]: [{ id: `${newId}_0`, person: "" }] }
     }));
   };
 
-  const addReward = (name: string, points: number) => {
+  const addReward = (reward: Omit<Reward, 'id'>) => {
     const newId = `r_custom_${Date.now()}`;
     setState(prev => ({
       ...prev,
-      rewards: [...prev.rewards, { id: newId, name, points }]
+      rewards: [...prev.rewards, { ...reward, id: newId }]
     }));
   };
 
@@ -157,24 +157,17 @@ export function useAppStore() {
     });
   };
 
-  const updateRewardCost = (rewardId: string, cost: number) => {
+  const updateTask = (taskId: string, updates: Partial<Task>) => {
     setState(prev => ({
       ...prev,
-      rewards: prev.rewards.map(r => (r.id === rewardId ? { ...r, points: cost } : r))
+      tasks: prev.tasks.map(t => (t.id === taskId ? { ...t, ...updates } : t))
     }));
   };
 
-  const updateTaskPoints = (taskId: string, points: number) => {
+  const updateReward = (rewardId: string, updates: Partial<Reward>) => {
     setState(prev => ({
       ...prev,
-      tasks: prev.tasks.map(t => (t.id === taskId ? { ...t, points } : t))
-    }));
-  };
-
-  const updateTaskName = (taskId: string, newName: string) => {
-    setState(prev => ({
-      ...prev,
-      tasks: prev.tasks.map(t => t.id === taskId ? { ...t, name: newName } : t)
+      rewards: prev.rewards.map(r => (r.id === rewardId ? { ...r, ...updates } : r))
     }));
   };
 
@@ -190,6 +183,12 @@ export function useAppStore() {
           taskRows: newTaskRows
         };
       });
+    }
+  };
+
+  const removeReward = (rewardId: string) => {
+    if (confirm('Czy na pewno chcesz usunąć tę nagrodę?')) {
+      setState(prev => ({ ...prev, rewards: prev.rewards.filter(r => r.id !== rewardId) }));
     }
   };
 
@@ -302,10 +301,10 @@ export function useAppStore() {
     removeTaskRow,
     toggleCompletion,
     toggleWeeklyPattern,
-    updateRewardCost,
-    updateTaskPoints,
-    updateTaskName,
+    updateTask,
+    updateReward,
     removeTask,
+    removeReward,
     updateComputerSlot,
     toggleCustomSchedule,
     assignUserToTask,

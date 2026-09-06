@@ -27,9 +27,12 @@ export interface HistoryEntry {
   timestamp: string;
   /** entity_id sensora punktów użytkownika, np. sensor.chore_points_adam */
   user: string;
-  delta: number;
-  new_total: number;
+  /** Czytelny opis zdarzenia - jedyne pole zawsze obecne (punkty, przypisania,
+   *  zmiany ustawień, harmonogram - wszystko ląduje w "Historii postaci"). */
   reason: string;
+  /** Obecne tylko przy zdarzeniach zmieniających punkty. */
+  delta?: number;
+  new_total?: number;
 }
 
 export type Person = string;
@@ -38,12 +41,17 @@ export interface Task {
   id: string;
   name: string;
   points: number;
+  description?: string;
+  /** Emoji jako ikona - proste, przenośne, nie wymaga biblioteki ikon. */
+  icon?: string;
 }
 
 export interface Reward {
   id: string;
   name: string;
   points: number;
+  description?: string;
+  icon?: string;
 }
 
 export interface TaskRow {

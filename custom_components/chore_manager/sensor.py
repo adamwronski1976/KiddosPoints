@@ -182,9 +182,10 @@ class ChoreConfigSensor(SensorEntity):
 
 
 class ChoreHistorySensor(SensorEntity):
-    """Dziennik zmian punktów: kto, kiedy, ile i za co dostał/stracił."""
+    """Historia postaci: wszystko, co kiedykolwiek dotyczyło danego konta -
+    punkty, przypisania zadań, zmiany ustawień i harmonogramu."""
 
-    _attr_name = "KiddosPoints - Historia punktów"
+    _attr_name = "KiddosPoints - Historia postaci"
     _attr_unique_id = "chore_manager_history"
     _attr_icon = "mdi:history"
 

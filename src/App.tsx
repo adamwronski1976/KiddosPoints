@@ -3,12 +3,12 @@ import { useAppStore } from './store';
 import { useHaConfigStore, HomeAssistantLike } from './haStore';
 import { Summary } from './components/Summary';
 import { Schedule } from './components/Schedule';
-import { Rewards } from './components/Rewards';
+import { TasksManager } from './components/TasksManager';
+import { RewardsManager } from './components/RewardsManager';
 import { ComputerTime } from './components/ComputerTime';
-import { UserManagement } from './components/UserManagement';
 import { HistoryLog } from './components/HistoryLog';
-import { UserPanel } from './components/UserPanel';
-import { DownloadCloud, UploadCloud, Settings, ShieldCheck, UserCircle2 } from 'lucide-react';
+import { UserPanelHub } from './components/UserPanelHub';
+import { DownloadCloud, UploadCloud, Settings, ShieldCheck } from 'lucide-react';
 import './chore-manager-card';
 
 const NO_HASS: HomeAssistantLike = { states: {}, callService: () => {} };
@@ -32,9 +32,6 @@ export default function App({ hass }: AppProps) {
     removeTaskRow,
     toggleCompletion,
     toggleWeeklyPattern,
-    updateRewardCost,
-    updateTaskPoints,
-    updateTaskName,
     removeTask,
     updateComputerSlot,
     toggleCustomSchedule,
@@ -43,7 +40,10 @@ export default function App({ hass }: AppProps) {
     addUser,
     updateUser,
     removeUser,
-    assignUserToTask
+    assignUserToTask,
+    updateTask,
+    updateReward,
+    removeReward
   } = hass ? haStore : localStore;
 
   // Akcje punktowe (zatwierdzanie, ręczna korekta) - dostępne tylko z prawdziwym
@@ -56,9 +56,7 @@ export default function App({ hass }: AppProps) {
   } : undefined;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // 'admin' | 'lovelace' | `user:<id>` (jedna zakładka na każdego użytkownika,
-  // tworzona/kasowana automatycznie razem z listą state.users).
-  const [activeTab, setActiveTab] = useState<string>('admin');
+  const [activeTab, setActiveTab] = useState<'admin' | 'tasks' | 'rewards' | 'user' | 'lovelace'>('admin');
 
   // Stan punktów tymczasowych/dynamicznych dla symulatora HA
   const [userPointsOverride, setUserPointsOverride] = useState<Record<string, number>>({});
@@ -262,16 +260,6 @@ export default function App({ hass }: AppProps) {
     }
   }, [hass, hassMock, activeTab]);
 
-  // Jeśli aktywna zakładka to panel usuniętego już użytkownika, wróć do panelu głównego.
-  useEffect(() => {
-    if (activeTab.startsWith('user:')) {
-      const userId = activeTab.slice('user:'.length);
-      if (!state.users.some(u => u.id === userId)) {
-        setActiveTab('admin');
-      }
-    }
-  }, [activeTab, state.users]);
-
   const handleExportBackup = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
     const downloadAnchorNode = document.createElement('a');
@@ -327,21 +315,29 @@ export default function App({ hass }: AppProps) {
               Panel Zarządzania (SPA)
             </button>
             <button
+              onClick={() => setActiveTab('tasks')}
+              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'tasks' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              Zadania
+            </button>
+            <button
+              onClick={() => setActiveTab('rewards')}
+              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'rewards' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              Nagrody
+            </button>
+            <button
+              onClick={() => setActiveTab('user')}
+              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'user' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              Panel użytkownika
+            </button>
+            <button
               onClick={() => setActiveTab('lovelace')}
               className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'lovelace' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Karta Lovelace (Podgląd HA)
             </button>
-            {state.users.map(u => (
-              <button
-                key={u.id}
-                onClick={() => setActiveTab(`user:${u.id}`)}
-                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-1.5 ${activeTab === `user:${u.id}` ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-              >
-                <UserCircle2 className="w-4 h-4" />
-                Panel {u.name}
-              </button>
-            ))}
           </div>
 
           <div className="flex items-center gap-2">
@@ -389,14 +385,35 @@ export default function App({ hass }: AppProps) {
           </div>
         )}
 
-        {/* WIDOK 2: PANEL OSOBISTY UŻYTKOWNIKA */}
-        {activeTab.startsWith('user:') && (() => {
-          const userId = activeTab.slice('user:'.length);
-          const user = state.users.find(u => u.id === userId);
-          if (!user) return null;
-          return (
-            <UserPanel
-              user={user}
+        {/* WIDOK 2: ZADANIA */}
+        {activeTab === 'tasks' && (
+          <div className="pb-12">
+            <TasksManager
+              tasks={state.tasks}
+              taskRows={state.taskRows}
+              onAddTask={addTask}
+              onUpdateTask={updateTask}
+              onRemoveTask={removeTask}
+            />
+          </div>
+        )}
+
+        {/* WIDOK 3: NAGRODY */}
+        {activeTab === 'rewards' && (
+          <div className="pb-12">
+            <RewardsManager
+              rewards={state.rewards}
+              onAddReward={addReward}
+              onUpdateReward={updateReward}
+              onRemoveReward={removeReward}
+            />
+          </div>
+        )}
+
+        {/* WIDOK 4: PANEL UŻYTKOWNIKA (selektor + pełny panel osoby) */}
+        {activeTab === 'user' && (
+          <div className="pb-12">
+            <UserPanelHub
               users={state.users}
               tasks={state.tasks}
               taskRows={state.taskRows}
@@ -406,42 +423,31 @@ export default function App({ hass }: AppProps) {
               history={state.history}
               pendingApprovals={state.pendingApprovals}
               hass={hass}
+              onAddUser={addUser}
+              onUpdateUser={updateUser}
+              onRemoveUser={removeUser}
               onAddRow={addTaskRow}
               onUpdateRow={updateTaskRowPerson}
               onRemoveRow={removeTaskRow}
               onToggleCompletion={toggleCompletion}
               onToggleWeeklyPattern={toggleWeeklyPattern}
               onToggleCustomSchedule={toggleCustomSchedule}
-              onUpdateTaskPoints={updateTaskPoints}
-              onUpdateTaskName={updateTaskName}
-              onRemoveTask={removeTask}
-              onAddTask={addTask}
               onReset={resetData}
               onAssign={assignUserToTask}
               pointActions={pointActions}
             />
-          );
-        })()}
+          </div>
+        )}
 
-        {/* WIDOK 3: GŁÓWNY PANEL ZARZĄDZANIA SPA */}
+        {/* WIDOK 5: GŁÓWNY PANEL ZARZĄDZANIA - przegląd ogólny + harmonogram + czas PC */}
         {activeTab === 'admin' && (
           <div className="space-y-8 animate-in fade-in duration-200">
             <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 p-4 rounded-xl flex items-start gap-3">
               <Settings className="w-5 h-5 mt-0.5 text-indigo-600 shrink-0" />
               <p className="text-sm">
-                <strong>Panel Zarządzania (Custom Panel w HA / Add-on):</strong> Ta pełna aplikacja służy rodzicom do ustalania harmonogramów, konfigurowania użytkowników z kodami PIN, tworzenia nagród oraz czasu PC. Poniżej znajdują się wszystkie moduły.
+                <strong>Panel Zarządzania:</strong> Przegląd punktów wszystkich domowników i pełny harmonogram. Katalogiem zadań i nagród zarządzasz w osobnych zakładkach, a ustawieniami konkretnej osoby w Panelu użytkownika.
               </p>
             </div>
-
-            <section className="w-full">
-              <UserManagement
-                users={state.users}
-                hass={hass}
-                onAddUser={addUser}
-                onUpdateUser={updateUser}
-                onRemoveUser={removeUser}
-              />
-            </section>
 
             <section className="w-full">
               <Summary
@@ -460,18 +466,14 @@ export default function App({ hass }: AppProps) {
                 taskRows={state.taskRows}
                 completions={state.completions}
                 customSchedule={state.customSchedule}
-                isWeeklyPattern={true} 
-                onAddRow={addTaskRow} 
-                onUpdateRow={updateTaskRowPerson} 
-                onRemoveRow={removeTaskRow} 
-                onToggleCompletion={toggleCompletion} 
-                onToggleWeeklyPattern={toggleWeeklyPattern} 
-                onToggleCustomSchedule={toggleCustomSchedule} 
-                onUpdateTaskPoints={updateTaskPoints} 
-                onUpdateTaskName={updateTaskName} 
-                onRemoveTask={removeTask} 
-                onAddTask={addTask} 
-                onReset={resetData} 
+                isWeeklyPattern={true}
+                onAddRow={addTaskRow}
+                onUpdateRow={updateTaskRowPerson}
+                onRemoveRow={removeTaskRow}
+                onToggleCompletion={toggleCompletion}
+                onToggleWeeklyPattern={toggleWeeklyPattern}
+                onToggleCustomSchedule={toggleCustomSchedule}
+                onReset={resetData}
               />
             </section>
 
@@ -483,37 +485,25 @@ export default function App({ hass }: AppProps) {
                 taskRows={state.taskRows}
                 completions={state.completions}
                 customSchedule={state.customSchedule}
-                onAddRow={addTaskRow} 
-                onUpdateRow={updateTaskRowPerson} 
-                onRemoveRow={removeTaskRow} 
-                onToggleCompletion={toggleCompletion} 
-                onToggleCustomSchedule={toggleCustomSchedule} 
-                onUpdateTaskPoints={updateTaskPoints} 
-                onUpdateTaskName={updateTaskName} 
-                onRemoveTask={removeTask} 
-                onAddTask={addTask} 
-                onReset={resetData} 
-              />
-            </section>
-            
-            <section className="w-full">
-              <ComputerTime 
-                users={state.users} 
-                computerSlots={state.computerSlots} 
-                onUpdateSlot={updateComputerSlot} 
+                onAddRow={addTaskRow}
+                onUpdateRow={updateTaskRowPerson}
+                onRemoveRow={removeTaskRow}
+                onToggleCompletion={toggleCompletion}
+                onToggleCustomSchedule={toggleCustomSchedule}
+                onReset={resetData}
               />
             </section>
 
             <section className="w-full">
-              <Rewards
-                rewards={state.rewards}
-                onUpdateCost={updateRewardCost}
-                onAddReward={addReward}
+              <ComputerTime
+                users={state.users}
+                computerSlots={state.computerSlots}
+                onUpdateSlot={updateComputerSlot}
               />
             </section>
 
             <section className="w-full pb-12">
-              <HistoryLog history={state.history} users={state.users} />
+              <HistoryLog history={state.history} users={state.users} title="Historia postaci — wszyscy" />
             </section>
           </div>
         )}

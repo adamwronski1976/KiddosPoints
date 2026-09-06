@@ -251,11 +251,17 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             await _set_points_for_entity(hass, user_entity_id, 0, reason="Reset punktów")
 
     async def handle_update_config(call: ServiceCall):
-        """Scala fragment (patch) konfiguracji panelu administracyjnego z magazynem."""
+        """Scala fragment (patch) konfiguracji panelu administracyjnego z magazynem
+        i loguje do "Historii postaci" każdej dotkniętej osoby, co się zmieniło."""
         patch = call.data.get("patch") or {}
         if "data" not in hass.data.get(DOMAIN, {}):
             return
         data = hass.data[DOMAIN]["data"]
+
+        # Migawki "przed" - potrzebne do policzenia, co się zmieniło.
+        old_users = [dict(u) for u in data.get("users", [])]
+        old_task_rows = {k: [dict(r) for r in v] for k, v in data.get("taskRows", {}).items()}
+        old_completions = dict(data.get("completions", {}))
 
         for key in _PATCHABLE_KEYS:
             if key in patch:
@@ -265,6 +271,17 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             await _sync_users(hass, patch["users"])
             data["users"] = patch["users"]
             _refresh_all_points_sensors(hass)
+
+        id_to_entity = {u["id"]: u.get("haEntityId") for u in data.get("users", [])}
+        tasks_by_id = {t["id"]: t.get("name", t["id"]) for t in data.get("tasks", [])}
+
+        if "users" in patch:
+            await _log_settings_changes(hass, old_users, data["users"])
+        if "taskRows" in patch:
+            await _log_assignment_changes(hass, old_task_rows, data["taskRows"], tasks_by_id, id_to_entity)
+        if "completions" in patch:
+            new_task_rows = data["taskRows"] if "taskRows" in patch else old_task_rows
+            await _log_schedule_changes(hass, old_completions, data["completions"], new_task_rows, tasks_by_id, id_to_entity)
 
         await _persist(hass)
         _refresh_config_sensor(hass)
@@ -328,26 +345,137 @@ def _refresh_history_sensor(hass: HomeAssistant) -> None:
         entity.async_write_ha_state()
 
 
-async def _log_history(hass: HomeAssistant, user_entity_id: str, delta: int, new_total: int, reason: str) -> None:
-    """Dopisuje wpis do dziennika zmian punktów (kto/kiedy/za co/ile)."""
+async def _log_history(
+    hass: HomeAssistant,
+    user_entity_id: str,
+    reason: str,
+    delta: int | None = None,
+    new_total: int | None = None,
+) -> None:
+    """Dopisuje wpis do "Historii postaci" - dziennika wszystkiego, co kiedykolwiek
+    dotyczyło danego konta (punkty, przypisania zadań, zmiany ustawień, harmonogram).
+    delta/new_total dotyczą tylko zdarzeń zmieniających punkty."""
     domain_data = hass.data.get(DOMAIN, {})
     if "data" not in domain_data:
         return
     data = domain_data["data"]
     entry = {
-        "id": f"h_{int(time.time() * 1000)}",
+        "id": f"h_{int(time.time() * 1000)}_{user_entity_id}",
         "timestamp": dt_util.utcnow().isoformat(),
         "user": user_entity_id,
-        "delta": delta,
-        "new_total": new_total,
         "reason": reason,
     }
+    if delta is not None:
+        entry["delta"] = delta
+        entry["new_total"] = new_total
     history = data.setdefault("history", [])
     history.append(entry)
     if len(history) > HISTORY_LIMIT:
         del history[: len(history) - HISTORY_LIMIT]
     await _persist(hass)
     _refresh_history_sensor(hass)
+
+
+_ROLE_LABELS = {"admin": "Administrator", "child": "Dziecko", "member": "Członek rodziny"}
+_DAY_NAMES = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"]
+_MAX_DETAILED_SCHEDULE_ENTRIES = 5
+
+
+async def _log_settings_changes(hass: HomeAssistant, old_users: list, new_users: list) -> None:
+    """Loguje zmiany imienia/roli/PIN-u/powiązania z person.* dla każdego konta."""
+    old_by_id = {u["id"]: u for u in old_users}
+    for user in new_users:
+        entity_id = user.get("haEntityId")
+        if not entity_id:
+            continue
+        old = old_by_id.get(user["id"])
+        if old is None:
+            await _log_history(hass, entity_id, "Utworzono konto")
+            continue
+        if old.get("name") != user.get("name"):
+            await _log_history(hass, entity_id, f"Zmieniono imię: {old.get('name')} → {user.get('name')}")
+        if old.get("role") != user.get("role"):
+            old_label = _ROLE_LABELS.get(old.get("role"), old.get("role"))
+            new_label = _ROLE_LABELS.get(user.get("role"), user.get("role"))
+            await _log_history(hass, entity_id, f"Zmieniono rolę: {old_label} → {new_label}")
+        if bool(old.get("requiresApproval")) != bool(user.get("requiresApproval")):
+            msg = "Włączono wymóg akceptacji zadań" if user.get("requiresApproval") else "Wyłączono wymóg akceptacji zadań"
+            await _log_history(hass, entity_id, msg)
+        if bool(old.get("pinCode")) != bool(user.get("pinCode")):
+            await _log_history(hass, entity_id, "Ustawiono kod PIN" if user.get("pinCode") else "Usunięto kod PIN")
+        if old.get("personEntityId") != user.get("personEntityId"):
+            if user.get("personEntityId"):
+                await _log_history(hass, entity_id, f"Powiązano z {user.get('personEntityId')}")
+            else:
+                await _log_history(hass, entity_id, "Usunięto powiązanie z Home Assistant")
+
+
+async def _log_assignment_changes(
+    hass: HomeAssistant, old_rows: dict, new_rows: dict, tasks_by_id: dict, id_to_entity: dict
+) -> None:
+    """Loguje przypięcie/odpięcie osoby od zadania."""
+    for task_id in set(old_rows.keys()) | set(new_rows.keys()):
+        old_persons = {r.get("person") for r in old_rows.get(task_id, []) if r.get("person")}
+        new_persons = {r.get("person") for r in new_rows.get(task_id, []) if r.get("person")}
+        task_name = tasks_by_id.get(task_id, task_id)
+        for uid in new_persons - old_persons:
+            entity_id = id_to_entity.get(uid)
+            if entity_id:
+                await _log_history(hass, entity_id, f"Przypisano do zadania: {task_name}")
+        for uid in old_persons - new_persons:
+            entity_id = id_to_entity.get(uid)
+            if entity_id:
+                await _log_history(hass, entity_id, f"Odpięto od zadania: {task_name}")
+
+
+async def _log_schedule_changes(
+    hass: HomeAssistant, old_completions: dict, new_completions: dict, task_rows: dict, tasks_by_id: dict, id_to_entity: dict
+) -> None:
+    """Loguje odhaczenia/odznaczenia w harmonogramie. Przy dużej liczbie naraz
+    (np. import) zapisuje jeden zbiorczy wpis zamiast zalewać historię."""
+    changed_keys = set(old_completions.keys()) ^ set(new_completions.keys())
+    if not changed_keys:
+        return
+
+    row_lookup = {}
+    for task_id, rows in task_rows.items():
+        for row in rows:
+            row_lookup[row["id"]] = (task_id, row.get("person"))
+
+    added: dict[str, list[str]] = {}
+    removed: dict[str, list[str]] = {}
+    for key in changed_keys:
+        row_id, _, day_str = key.rpartition("_")
+        info = row_lookup.get(row_id)
+        if not info:
+            continue
+        task_id, person = info
+        if not person:
+            continue
+        entity_id = id_to_entity.get(person)
+        if not entity_id:
+            continue
+        task_name = tasks_by_id.get(task_id, task_id)
+        try:
+            day = int(day_str)
+            day_label = f"{_DAY_NAMES[(day - 1) % 7]} (dzień {day})"
+        except ValueError:
+            day_label = day_str
+        bucket = added if key in new_completions else removed
+        bucket.setdefault(entity_id, []).append(f"{task_name} — {day_label}")
+
+    for entity_id, items in added.items():
+        if len(items) <= _MAX_DETAILED_SCHEDULE_ENTRIES:
+            for item in items:
+                await _log_history(hass, entity_id, f"Odhaczono w harmonogramie: {item}")
+        else:
+            await _log_history(hass, entity_id, f"Odhaczono {len(items)} pozycji w harmonogramie")
+    for entity_id, items in removed.items():
+        if len(items) <= _MAX_DETAILED_SCHEDULE_ENTRIES:
+            for item in items:
+                await _log_history(hass, entity_id, f"Odznaczono w harmonogramie: {item}")
+        else:
+            await _log_history(hass, entity_id, f"Odznaczono {len(items)} pozycji w harmonogramie")
 
 
 async def _sync_users(hass: HomeAssistant, users: list) -> None:
@@ -395,7 +523,7 @@ async def _set_points_for_entity(hass: HomeAssistant, user_entity_id: str, point
         await _persist(hass)
 
     if reason:
-        await _log_history(hass, user_entity_id, points - current_points, points, reason)
+        await _log_history(hass, user_entity_id, reason, delta=points - current_points, new_total=points)
 
 
 async def _add_points_to_entity(hass: HomeAssistant, user_entity_id: str, points: int, reason: str = "") -> None:

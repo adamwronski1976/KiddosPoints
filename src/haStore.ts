@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval } from './types';
+import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval, Task, Reward } from './types';
 
 const CONFIG_ENTITY = 'sensor.chore_manager_config';
 const HISTORY_ENTITY = 'sensor.chore_manager_history';
@@ -12,8 +12,8 @@ export interface HomeAssistantLike {
 
 interface HaAppState {
   users: User[];
-  tasks: { id: string; name: string; points: number }[];
-  rewards: { id: string; name: string; points: number }[];
+  tasks: Task[];
+  rewards: Reward[];
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
   computerSlots: Record<string, number>;
@@ -64,17 +64,17 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     hass.callService('chore_manager', 'update_config', { patch: partial });
   };
 
-  const addTask = (name: string, points: number) => {
+  const addTask = (task: Omit<Task, 'id'>) => {
     const newId = `t_custom_${Date.now()}`;
     patch({
-      tasks: [...state.tasks, { id: newId, name, points }],
+      tasks: [...state.tasks, { ...task, id: newId }],
       taskRows: { ...state.taskRows, [newId]: [{ id: `${newId}_0`, person: '' }] },
     });
   };
 
-  const addReward = (name: string, points: number) => {
+  const addReward = (reward: Omit<Reward, 'id'>) => {
     const newId = `r_custom_${Date.now()}`;
-    patch({ rewards: [...state.rewards, { id: newId, name, points }] });
+    patch({ rewards: [...state.rewards, { ...reward, id: newId }] });
   };
 
   const addTaskRow = (taskId: string) => {
@@ -132,16 +132,12 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     patch({ completions: newCompletions });
   };
 
-  const updateRewardCost = (rewardId: string, cost: number) => {
-    patch({ rewards: state.rewards.map(r => (r.id === rewardId ? { ...r, points: cost } : r)) });
+  const updateTask = (taskId: string, updates: Partial<Task>) => {
+    patch({ tasks: state.tasks.map(t => (t.id === taskId ? { ...t, ...updates } : t)) });
   };
 
-  const updateTaskPoints = (taskId: string, points: number) => {
-    patch({ tasks: state.tasks.map(t => (t.id === taskId ? { ...t, points } : t)) });
-  };
-
-  const updateTaskName = (taskId: string, newName: string) => {
-    patch({ tasks: state.tasks.map(t => (t.id === taskId ? { ...t, name: newName } : t)) });
+  const updateReward = (rewardId: string, updates: Partial<Reward>) => {
+    patch({ rewards: state.rewards.map(r => (r.id === rewardId ? { ...r, ...updates } : r)) });
   };
 
   const removeTask = (taskId: string) => {
@@ -149,6 +145,11 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     const newTaskRows = { ...state.taskRows };
     delete newTaskRows[taskId];
     patch({ tasks: state.tasks.filter(t => t.id !== taskId), taskRows: newTaskRows });
+  };
+
+  const removeReward = (rewardId: string) => {
+    if (!confirm('Czy na pewno chcesz usunąć tę nagrodę?')) return;
+    patch({ rewards: state.rewards.filter(r => r.id !== rewardId) });
   };
 
   const updateComputerSlot = (person: string, day: number, slots: number) => {
@@ -265,9 +266,6 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     removeTaskRow,
     toggleCompletion,
     toggleWeeklyPattern,
-    updateRewardCost,
-    updateTaskPoints,
-    updateTaskName,
     removeTask,
     updateComputerSlot,
     toggleCustomSchedule,
@@ -279,5 +277,8 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     rejectApproval,
     addPointsToUser,
     resetUserPoints,
+    updateTask,
+    updateReward,
+    removeReward,
   };
 }

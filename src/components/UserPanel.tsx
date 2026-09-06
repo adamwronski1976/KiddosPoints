@@ -3,9 +3,10 @@ import { User, Task, TaskRow, Completions, HistoryEntry, PendingApproval, Reward
 import { HomeAssistantLike } from '../haStore';
 import { Schedule } from './Schedule';
 import { HistoryLog } from './HistoryLog';
+import { UserSettingsForm } from './UserSettingsForm';
 import {
   Shield, ShieldAlert, Star, Gift, ClipboardList, ClipboardCheck,
-  CheckCircle2, XCircle, PlusCircle, MinusCircle, RotateCcw, Link2
+  CheckCircle2, XCircle, PlusCircle, MinusCircle, RotateCcw, Link2, Settings2, Trash2
 } from 'lucide-react';
 
 interface Props {
@@ -25,12 +26,10 @@ interface Props {
   onToggleCompletion: (rowId: string, dayIndex: number, completed: boolean) => void;
   onToggleWeeklyPattern: (rowId: string, dayIndex: number, completed: boolean) => void;
   onToggleCustomSchedule: (taskId: string) => void;
-  onUpdateTaskPoints: (taskId: string, points: number) => void;
-  onUpdateTaskName: (taskId: string, newName: string) => void;
-  onRemoveTask: (taskId: string) => void;
-  onAddTask: (name: string, points: number) => void;
   onReset: () => void;
   onAssign: (taskId: string, userId: string) => void;
+  onUpdateUser: (id: string, updates: Partial<User>) => void;
+  onRemoveUser: (id: string) => void;
   pointActions?: {
     approveApproval: (a: PendingApproval) => void;
     rejectApproval: (a: PendingApproval, reason?: string) => void;
@@ -42,10 +41,12 @@ interface Props {
 export const UserPanel: React.FC<Props> = ({
   user, users, tasks, taskRows, completions, customSchedule, rewards, history, pendingApprovals, hass,
   onAddRow, onUpdateRow, onRemoveRow, onToggleCompletion, onToggleWeeklyPattern, onToggleCustomSchedule,
-  onUpdateTaskPoints, onUpdateTaskName, onRemoveTask, onAddTask, onReset, onAssign, pointActions
+  onReset, onAssign, onUpdateUser, onRemoveUser, pointActions
 }) => {
   const [adjustPoints, setAdjustPoints] = useState(10);
   const [adjustReason, setAdjustReason] = useState('');
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
+  const [settingsForm, setSettingsForm] = useState<Omit<User, 'id'>>(user);
 
   const liveSensor = hass?.states[user.haEntityId];
   const livePoints = liveSensor ? parseInt(liveSensor.state, 10) || 0 : null;
@@ -81,6 +82,18 @@ export const UserPanel: React.FC<Props> = ({
 
   const affordableRewards = livePoints !== null ? rewards.filter(r => r.points <= livePoints) : [];
 
+  const startEditSettings = () => {
+    setSettingsForm(user);
+    setIsEditingSettings(true);
+  };
+
+  const saveSettings = () => {
+    onUpdateUser(user.id, settingsForm);
+    setIsEditingSettings(false);
+  };
+
+  const handleDelete = () => onRemoveUser(user.id);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* NAGŁÓWEK OSOBY */}
@@ -108,15 +121,59 @@ export const UserPanel: React.FC<Props> = ({
             )}
           </div>
         </div>
-        <div className="text-right flex-shrink-0">
-          <div className="text-4xl font-black text-indigo-600 flex items-center gap-2 justify-end">
-            <Star className="w-7 h-7 text-amber-400 fill-amber-400" />
-            {livePoints !== null ? livePoints : '—'}
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <div className="text-right">
+            <div className="text-4xl font-black text-indigo-600 flex items-center gap-2 justify-end">
+              <Star className="w-7 h-7 text-amber-400 fill-amber-400" />
+              {livePoints !== null ? livePoints : '—'}
+            </div>
+            {rank && <div className="text-xs text-slate-500 mt-1">Poziom {level} — {rank}</div>}
+            {pointsToNext !== null && <div className="text-[11px] text-slate-400">{pointsToNext} pkt do kolejnego poziomu</div>}
           </div>
-          {rank && <div className="text-xs text-slate-500 mt-1">Poziom {level} — {rank}</div>}
-          {pointsToNext !== null && <div className="text-[11px] text-slate-400">{pointsToNext} pkt do kolejnego poziomu</div>}
+          <div className="flex flex-col gap-1.5">
+            <button
+              onClick={startEditSettings}
+              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              title="Ustawienia konta"
+            >
+              <Settings2 className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleDelete}
+              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Usuń użytkownika"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* USTAWIENIA KONTA (przeniesione z głównej strony) */}
+      {isEditingSettings && (
+        <div className="bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden">
+          <div className="bg-indigo-50 px-6 py-4 border-b border-indigo-200 flex items-center gap-2">
+            <Settings2 className="w-5 h-5 text-indigo-600" />
+            <h3 className="font-semibold text-slate-800">Ustawienia konta</h3>
+          </div>
+          <div className="p-6">
+            <UserSettingsForm
+              formData={settingsForm}
+              onChange={updates => setSettingsForm(f => ({ ...f, ...updates }))}
+              hass={hass}
+              isNew={false}
+            />
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setIsEditingSettings(false)} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
+                Anuluj
+              </button>
+              <button onClick={saveSettings} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                Zapisz zmiany
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AKCJE PUNKTOWE + DO ZATWIERDZENIA */}
       {pointActions && (
@@ -206,13 +263,13 @@ export const UserPanel: React.FC<Props> = ({
             {rewards.map(r => (
               <span
                 key={r.id}
-                className={`text-xs px-3 py-1.5 rounded-full border font-medium ${
+                className={`text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 ${
                   r.points <= livePoints
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : 'bg-slate-50 text-slate-400 border-slate-200'
                 }`}
               >
-                {r.name} — {r.points} pkt
+                <span>{r.icon || '🎁'}</span> {r.name} — {r.points} pkt
               </span>
             ))}
           </div>
@@ -235,7 +292,7 @@ export const UserPanel: React.FC<Props> = ({
                 onClick={() => onAssign(t.id, user.id)}
                 className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 text-slate-600 font-medium transition-colors"
               >
-                <PlusCircle className="w-3.5 h-3.5" /> {t.name} ({t.points} pkt)
+                <span>{t.icon || '📌'}</span> {t.name} ({t.points} pkt)
               </button>
             ))
           )}
@@ -259,10 +316,6 @@ export const UserPanel: React.FC<Props> = ({
         onToggleCompletion={onToggleCompletion}
         onToggleWeeklyPattern={onToggleWeeklyPattern}
         onToggleCustomSchedule={onToggleCustomSchedule}
-        onUpdateTaskPoints={onUpdateTaskPoints}
-        onUpdateTaskName={onUpdateTaskName}
-        onRemoveTask={onRemoveTask}
-        onAddTask={onAddTask}
         onReset={onReset}
       />
 
@@ -280,15 +333,11 @@ export const UserPanel: React.FC<Props> = ({
         onRemoveRow={onRemoveRow}
         onToggleCompletion={onToggleCompletion}
         onToggleCustomSchedule={onToggleCustomSchedule}
-        onUpdateTaskPoints={onUpdateTaskPoints}
-        onUpdateTaskName={onUpdateTaskName}
-        onRemoveTask={onRemoveTask}
-        onAddTask={onAddTask}
         onReset={onReset}
       />
 
-      {/* LOG TEJ OSOBY */}
-      <HistoryLog history={myHistory} users={users} />
+      {/* HISTORIA POSTACI - wszystko, co kiedykolwiek dotyczyło tego konta */}
+      <HistoryLog history={myHistory} users={users} title={`Historia postaci — ${user.name}`} />
     </div>
   );
 };
