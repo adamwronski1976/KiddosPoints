@@ -372,15 +372,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                             </button>
                           )}
                         </div>
-                        {row.person && !isCustom && (
-                          <div className="mt-1.5 pl-1">
-                            <span className="text-[9.5px] text-slate-500 leading-tight">
-                              Wykonywane: {wCnt} {wCnt === 1 ? 'raz' : 'razy'} w tyg., {mCnt} {mCnt === 1 ? 'raz' : 'razy'} w mies.
-                            </span>
-                          </div>
-                        )}
-
-                        {row.person && isCustom && (
+                        {row.person && (
                           <div className="mt-1.5 pl-1 flex items-center gap-1.5 flex-wrap">
                             {isPeriodicRow ? (
                               <>
@@ -398,9 +390,13 @@ export const Schedule: React.FC<ScheduleProps> = ({
                             ) : (
                               <button
                                 onClick={() => openPeriodicModal(task, row)}
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-full px-2 py-0.5 transition-colors"
+                                className="group/stats inline-flex items-center gap-1 text-[9.5px] text-slate-500 hover:text-violet-700 leading-tight"
+                                title="Kliknij, żeby ustawić harmonogram niestandardowy (X razy w miesiącu/roku)"
                               >
-                                <Repeat className="w-3 h-3" /> Ustaw harmonogram
+                                <span className="underline decoration-dotted underline-offset-2 group-hover/stats:decoration-violet-400">
+                                  Wykonywane: {wCnt} {wCnt === 1 ? 'raz' : 'razy'} w tyg., {mCnt} {mCnt === 1 ? 'raz' : 'razy'} w mies.
+                                </span>
+                                <Repeat className="w-2.5 h-2.5 flex-shrink-0 opacity-0 group-hover/stats:opacity-100 transition-opacity" />
                               </button>
                             )}
                           </div>
