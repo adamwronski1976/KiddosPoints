@@ -67,17 +67,21 @@ export const Schedule: React.FC<ScheduleProps> = ({
   const tableRef = useRef<HTMLTableElement>(null);
   const [mode, setMode] = useState<'week' | 'month'>('week');
   const [calDate, setCalDate] = useState(() => new Date());
-  const [editingPeriodicRowId, setEditingPeriodicRowId] = useState<string | null>(null);
-  const [periodicForm, setPeriodicForm] = useState<{ times: number; period: 'month' | 'year' }>({ times: 1, period: 'month' });
+  // Szkice edycji harmonogramu okresowego per wiersz (id wiersza -> wartości
+  // formularza) - osobny wpis na wiersz, żeby kilka osób pod tym samym
+  // "Niestandardowym harmonogramem" mogło być edytowanych niezależnie naraz.
+  const [periodicDrafts, setPeriodicDrafts] = useState<Record<string, { times: number; period: 'month' | 'year' }>>({});
 
-  const startEditPeriodic = (rowId: string, existing?: PeriodicSchedule) => {
-    setPeriodicForm({ times: existing?.times_per_period ?? 1, period: existing?.period ?? 'month' });
-    setEditingPeriodicRowId(rowId);
+  const getPeriodicDraft = (rowId: string, existing?: PeriodicSchedule) =>
+    periodicDrafts[rowId] ?? { times: existing?.times_per_period ?? 1, period: existing?.period ?? 'month' };
+
+  const updatePeriodicDraft = (rowId: string, existing: PeriodicSchedule | undefined, updates: Partial<{ times: number; period: 'month' | 'year' }>) => {
+    setPeriodicDrafts(prev => ({ ...prev, [rowId]: { ...getPeriodicDraft(rowId, existing), ...updates } }));
   };
 
-  const savePeriodic = (taskId: string, personId: string, rowId: string) => {
-    onSetPeriodicSchedule(taskId, personId, periodicForm.times, periodicForm.period);
-    setEditingPeriodicRowId(null);
+  const savePeriodic = (taskId: string, personId: string, rowId: string, existing?: PeriodicSchedule) => {
+    const draft = getPeriodicDraft(rowId, existing);
+    onSetPeriodicSchedule(taskId, personId, draft.times, draft.period);
   };
 
   const isWeeklyPattern = mode === 'week';
@@ -137,35 +141,6 @@ export const Schedule: React.FC<ScheduleProps> = ({
     XLSX.utils.book_append_sheet(wb, ws, "Harmonogram");
     const suffix = mode === 'week' ? 'Tygodniowy' : `Miesieczny_${MONTH_NAMES[displayMonthIdx]}_${displayYear}`;
     XLSX.writeFile(wb, `Harmonogram_${suffix}.xlsx`);
-  };
-
-  const getRowMonthlySummary = (rowId: string) => {
-    const dayNamesLong = ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela'];
-    const dowMap = new Map<number, number[]>();
-    for (let d = 1; d <= 31; d++) {
-      if (completions[`${rowId}_${d}`]) {
-        const dow = (d - 1) % 7;
-        const occurrence = Math.ceil(d / 7);
-        if (!dowMap.has(dow)) dowMap.set(dow, []);
-        dowMap.get(dow)!.push(occurrence);
-      }
-    }
-
-    if (dowMap.size === 0) return null;
-
-    const parts: string[] = [];
-    Array.from(dowMap.keys()).sort().forEach(dow => {
-      const occurrences = dowMap.get(dow)!;
-      parts.push(`${occurrences.join(',')} ${dayNamesLong[dow]}`);
-    });
-
-    return `${parts.join(', ')} miesiąca`;
-  };
-
-  const getPersonColor = (personId: string) => {
-    const colors = ['text-blue-600', 'text-green-600', 'text-pink-600', 'text-slate-900', 'text-yellow-600', 'text-orange-600', 'text-purple-600', 'text-teal-600'];
-    const idx = personId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
-    return colors[idx];
   };
 
   const getPersonCheckboxColor = (personId: string) => {
@@ -353,75 +328,59 @@ export const Schedule: React.FC<ScheduleProps> = ({
                             </button>
                           )}
                         </div>
-                        {row.person && (
-                          <div className="mt-1.5 pl-1 flex flex-col gap-1">
-                            {isPeriodicRow ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-1.5 py-0.5 w-fit">
-                                <Repeat className="w-2.5 h-2.5" />
-                                {periodic!.times_per_period}x / {PERIOD_LABELS[periodic!.period]}
-                                <button
-                                  onClick={() => onClearPeriodicSchedule(task.id, row.person)}
-                                  className="text-violet-400 hover:text-violet-700"
-                                  title="Usuń harmonogram okresowy"
-                                >
-                                  <X className="w-2.5 h-2.5" />
-                                </button>
-                              </span>
-                            ) : (
-                              <span className="text-[9.5px] text-slate-500 leading-tight">
-                                Wykonywane: {wCnt} {wCnt === 1 ? 'raz' : 'razy'} w tyg., {mCnt} {mCnt === 1 ? 'raz' : 'razy'} w mies.
-                              </span>
-                            )}
-                            {isCustom && !isPeriodicRow && (
-                              <span className={`text-[10px] font-semibold leading-tight ${getPersonColor(row.person)}`}>
-                                {getRowMonthlySummary(row.id) || <span className="text-slate-400 font-normal italic">Brak przypisań w mies.</span>}
-                              </span>
-                            )}
-
-                            {editingPeriodicRowId === row.id ? (
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={31}
-                                  value={periodicForm.times}
-                                  onChange={e => setPeriodicForm(f => ({ ...f, times: parseInt(e.target.value, 10) || 1 }))}
-                                  className="w-10 px-1 py-0.5 text-[10px] border border-slate-300 rounded"
-                                />
-                                <span className="text-[9px] text-slate-500">x /</span>
-                                <select
-                                  value={periodicForm.period}
-                                  onChange={e => setPeriodicForm(f => ({ ...f, period: e.target.value as 'month' | 'year' }))}
-                                  className="text-[10px] border border-slate-300 rounded"
-                                >
-                                  <option value="month">miesiąc</option>
-                                  <option value="year">rok</option>
-                                </select>
-                                <button
-                                  onClick={() => savePeriodic(task.id, row.person, row.id)}
-                                  className="text-emerald-600 hover:bg-emerald-50 rounded px-1 text-[10px] font-semibold"
-                                >
-                                  OK
-                                </button>
-                                <button
-                                  onClick={() => setEditingPeriodicRowId(null)}
-                                  className="text-slate-400 hover:text-slate-600 text-[10px]"
-                                >
-                                  Anuluj
-                                </button>
-                              </div>
-                            ) : (
-                              !isPeriodicRow && (
-                                <button
-                                  onClick={() => startEditPeriodic(row.id)}
-                                  className="inline-flex items-center gap-1 text-[9.5px] text-violet-600 hover:text-violet-800 hover:underline w-fit"
-                                >
-                                  <Repeat className="w-2.5 h-2.5" /> Harmonogram okresowy
-                                </button>
-                              )
-                            )}
+                        {row.person && !isCustom && (
+                          <div className="mt-1.5 pl-1">
+                            <span className="text-[9.5px] text-slate-500 leading-tight">
+                              Wykonywane: {wCnt} {wCnt === 1 ? 'raz' : 'razy'} w tyg., {mCnt} {mCnt === 1 ? 'raz' : 'razy'} w mies.
+                            </span>
                           </div>
                         )}
+
+                        {row.person && isCustom && (() => {
+                          const draft = getPeriodicDraft(row.id, periodic);
+                          return (
+                            <div className="mt-1.5 pl-1 flex items-center gap-1 flex-wrap">
+                              <input
+                                type="number"
+                                min={1}
+                                max={31}
+                                value={draft.times}
+                                onChange={e => updatePeriodicDraft(row.id, periodic, { times: parseInt(e.target.value, 10) || 1 })}
+                                className="w-10 px-1 py-0.5 text-[10px] border border-slate-300 rounded"
+                              />
+                              <span className="text-[9px] text-slate-500">x /</span>
+                              <select
+                                value={draft.period}
+                                onChange={e => updatePeriodicDraft(row.id, periodic, { period: e.target.value as 'month' | 'year' })}
+                                className="text-[10px] border border-slate-300 rounded"
+                              >
+                                <option value="month">miesiąc</option>
+                                <option value="year">rok</option>
+                              </select>
+                              <button
+                                onClick={() => savePeriodic(task.id, row.person, row.id, periodic)}
+                                className="inline-flex items-center gap-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                                title="Zapisz harmonogram okresowy"
+                              >
+                                <Repeat className="w-2.5 h-2.5" /> Zapisz
+                              </button>
+                              {isPeriodicRow && (
+                                <button
+                                  onClick={() => onClearPeriodicSchedule(task.id, row.person)}
+                                  className="text-slate-400 hover:text-red-600"
+                                  title="Usuń harmonogram okresowy"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isPeriodicRow && (
+                                <span className="w-full text-[9px] text-violet-600 font-medium">
+                                  Aktywne: {periodic!.times_per_period}x / {PERIOD_LABELS[periodic!.period]}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {rowIndex === 0 && (
