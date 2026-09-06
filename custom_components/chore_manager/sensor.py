@@ -10,6 +10,14 @@ def _stored_data(hass: HomeAssistant) -> dict:
     return hass.data.get(DOMAIN, {}).get("data", {})
 
 
+def _find_user(hass: HomeAssistant, user_id: str) -> dict:
+    """Odnajduje bieżący rekord użytkownika w magazynie (pusty dict, jeśli usunięty)."""
+    for user in _stored_data(hass).get("users", []):
+        if user.get("id") == user_id:
+            return user
+    return {}
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """Konfiguracja sensorów na podstawie Config Entry."""
     hass.data.setdefault(DOMAIN, {})
@@ -48,14 +56,12 @@ class ChorePointsSensor(SensorEntity):
 
     def __init__(self, hass: HomeAssistant, user: dict):
         user_id = user["id"]
-        name = user.get("name", user_id)
-        self._attr_name = f"Punkty {name}"
         self._attr_unique_id = f"chore_points_{user_id}"
         self.entity_id = user.get("haEntityId") or f"sensor.chore_points_{user_id}"
         self._user_id = user_id
-        # Opcjonalne powiązanie z prawdziwą osobą HA (person.*) - do wyświetlania
-        # zdjęcia/imienia w panelu i ewentualnych automatyzacji opartych o obecność.
-        self._person_entity_id = user.get("personEntityId")
+        # Nazwa użyta tylko zanim encja trafi do hass (fallback); potem name
+        # czyta aktualne imię na żywo z magazynu, patrz właściwość `name` niżej.
+        self._initial_name = user.get("name", user_id)
         # Odtworzenie ostatniej wartości punktów z magazynu integracji (przetrwanie restartu).
         stored_points = _stored_data(hass).get("points", {})
         self._state = stored_points.get(self.entity_id, 0)
@@ -70,17 +76,35 @@ class ChorePointsSensor(SensorEntity):
         self.async_write_ha_state()
 
     @property
+    def name(self):
+        """Nazwa czytana na żywo z magazynu - zmiana imienia w panelu jest widoczna od razu."""
+        if not self.hass:
+            return f"Punkty {self._initial_name}"
+        user = _find_user(self.hass, self._user_id)
+        return f"Punkty {user.get('name', self._initial_name)}"
+
+    @property
     def native_value(self):
         return self._state
 
     @property
     def extra_state_attributes(self):
-        """Dodatkowe atrybuty: poziom, ranga, ukończone zadania."""
+        """Punkty + CAŁOŚĆ ustawień użytkownika, czytane na żywo z magazynu - to
+        jedyne, zawsze aktualne źródło prawdy o tym userze (nie kopia z chwili
+        utworzenia encji), żeby zmiana roli/PIN-u/etc. w panelu była widoczna
+        tu natychmiast, bez ponownego tworzenia sensora."""
         points = self._state
         level = (points // 100) + 1
+        user = _find_user(self.hass, self._user_id) if self.hass else {}
         return {
             "user_id": self._user_id,
-            "person_entity_id": self._person_entity_id,
+            "name": user.get("name", self._initial_name),
+            "role": user.get("role"),
+            "requires_approval": user.get("requiresApproval"),
+            "notify_on_new_task": user.get("notifyOnNewTask"),
+            "notify_on_reward": user.get("notifyOnReward"),
+            "has_pin": bool(user.get("pinCode")),
+            "person_entity_id": user.get("personEntityId"),
             "level": level,
             "rank": self._get_rank(level),
             "points_to_next_level": 100 - (points % 100),

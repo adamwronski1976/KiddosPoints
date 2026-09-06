@@ -264,6 +264,7 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         if "users" in patch:
             await _sync_users(hass, patch["users"])
             data["users"] = patch["users"]
+            _refresh_all_points_sensors(hass)
 
         await _persist(hass)
         _refresh_config_sensor(hass)
@@ -310,6 +311,14 @@ def _refresh_config_sensor(hass: HomeAssistant) -> None:
 def _refresh_todo_entity(hass: HomeAssistant) -> None:
     entity = hass.data.get(DOMAIN, {}).get("todo_entity")
     if entity is not None:
+        entity.async_write_ha_state()
+
+
+def _refresh_all_points_sensors(hass: HomeAssistant) -> None:
+    """Odświeża atrybuty (rola, PIN, powiadomienia, ...) na wszystkich sensorach
+    punktów po edycji użytkowników w panelu - inaczej zmiana byłaby widoczna
+    dopiero przy następnej zmianie punktów danej osoby."""
+    for entity in hass.data.get(DOMAIN, {}).get("points_entities", {}).values():
         entity.async_write_ha_state()
 
 
