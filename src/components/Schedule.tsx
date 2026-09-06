@@ -175,16 +175,16 @@ export const Schedule: React.FC<ScheduleProps> = ({
       
       <div className="p-0 overflow-auto max-h-[70vh]">
         <table ref={tableRef} className="min-w-full divide-y divide-slate-200 border-separate border-spacing-0">
-          <thead className="bg-slate-50 sticky top-0 z-20 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
+          <thead className="bg-slate-50 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
             <tr>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider min-w-[200px] sticky left-0 bg-slate-50 z-30 border-r border-slate-200 shadow-[1px_0_0_0_rgba(226,232,240,1)]">Zadanie</th>
-              <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider min-w-[140px] bg-slate-50 border-r border-slate-200">Osoba</th>
-              <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider bg-slate-50 border-r border-slate-200">Pkt</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider min-w-[200px] sticky left-0 top-0 bg-slate-50 z-30 border-r border-slate-200 shadow-[1px_0_0_0_rgba(226,232,240,1)]">Zadanie</th>
+              <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider min-w-[140px] sticky top-0 bg-slate-50 z-20 border-r border-slate-200">Osoba</th>
+              <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-50 z-20 border-r border-slate-200">Pkt</th>
               {daysArray.map(day => {
                 const dayName = ['Pn','Wt','Śr','Cz','Pt','Sb','Nd'][(day - 1) % 7];
                 const isWeekend = dayName === 'Sb' || dayName === 'Nd';
                 return (
-                  <th key={day} scope="col" className={`px-1 py-3 text-center text-[10px] font-bold uppercase tracking-wider min-w-[40px] ${isWeekend ? 'bg-amber-50 text-amber-700' : 'bg-slate-50 text-slate-500'}`}>
+                  <th key={day} scope="col" className={`px-1 py-3 text-center text-[10px] font-bold uppercase tracking-wider min-w-[40px] sticky top-0 z-20 ${isWeekend ? 'bg-amber-50 text-amber-700' : 'bg-slate-50 text-slate-500'}`}>
                     <div>{dayName}</div>
                     {viewMode === 'month' && <div className={`text-[8px] font-normal leading-none mt-1 ${isWeekend ? 'text-amber-600' : 'text-slate-400'}`}>{day}</div>}
                   </th>
@@ -193,10 +193,14 @@ export const Schedule: React.FC<ScheduleProps> = ({
             </tr>
           </thead>
           <tbody className="bg-white">
-            {tasks.map(task => {
+            {tasks.map((task, taskIndex) => {
               const rows = taskRows[task.id] || [];
               const isCustom = viewMode === 'week' && !!customSchedule[task.id];
-              
+              // Tło naprzemienne per-zadanie (nie per-wiersz) - pomaga odróżnić grupy
+              // wierszy należące do różnych zadań. Pełna krycie (bez alfa), bo jedna
+              // z kolumn jest "sticky" i musi zasłaniać przewijaną zawartość pod spodem.
+              const groupBg = taskIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+
               return (
                 <React.Fragment key={task.id}>
                   {rows.map((row, rowIndex) => {
@@ -210,13 +214,13 @@ export const Schedule: React.FC<ScheduleProps> = ({
                     }
                     
                     return (
-                    <tr key={row.id} className={`group transition-colors ${isCustom ? 'bg-slate-100' : 'hover:bg-slate-50'}`}>
-                      
+                    <tr key={row.id} className={`group transition-colors ${isCustom ? 'bg-slate-100' : `${groupBg} hover:bg-slate-100`}`}>
+
                       {/* Only render Task Name and Points for the first row of a task */}
                       {rowIndex === 0 && (
-                        <td 
-                          rowSpan={rows.length} 
-                          className={`px-4 py-3 whitespace-normal text-sm font-medium text-slate-900 sticky left-0 z-10 border-r border-b border-slate-200 shadow-[1px_0_0_0_rgba(226,232,240,1)] align-top ${isCustom ? 'bg-slate-100' : 'bg-white'}`}
+                        <td
+                          rowSpan={rows.length}
+                          className={`px-4 py-3 whitespace-normal text-sm font-medium text-slate-900 sticky left-0 z-10 border-r border-b-2 border-slate-300 shadow-[1px_0_0_0_rgba(226,232,240,1)] align-top ${isCustom ? 'bg-slate-100' : groupBg}`}
                         >
                           <div className="flex justify-between items-start gap-2">
                             <div className="flex-1">
@@ -286,7 +290,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                         </td>
                       )}
                       
-                      <td className={`px-2 py-2 whitespace-nowrap border-r align-top ${rowIndex === rows.length - 1 ? 'border-b border-slate-200' : 'border-b border-slate-100'} ${isCustom ? 'bg-slate-100 border-slate-200 group-hover:bg-slate-200' : 'bg-white border-slate-200 group-hover:bg-slate-50'}`}>
+                      <td className={`px-2 py-2 whitespace-nowrap border-r align-top ${rowIndex === rows.length - 1 ? 'border-b-2 border-slate-300' : 'border-b border-slate-200'} ${isCustom ? 'bg-slate-100 border-slate-200 group-hover:bg-slate-200' : `${groupBg} border-slate-200 group-hover:bg-slate-100`}`}>
                         <div className="flex items-center gap-1">
                           <select
                             className="block w-full pl-2 pr-6 py-1 text-sm border-slate-300 focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 rounded-md"
@@ -323,9 +327,9 @@ export const Schedule: React.FC<ScheduleProps> = ({
                       </td>
                       
                       {rowIndex === 0 && (
-                        <td 
-                          rowSpan={rows.length} 
-                          className={`px-2 py-3 whitespace-nowrap text-center border-r border-b border-slate-200 align-top pt-2 ${isCustom ? 'bg-slate-100' : 'bg-white'}`}
+                        <td
+                          rowSpan={rows.length}
+                          className={`px-2 py-3 whitespace-nowrap text-center border-r border-b-2 border-slate-300 align-top pt-2 ${isCustom ? 'bg-slate-100' : groupBg}`}
                         >
                           <input 
                             type="number"
@@ -348,14 +352,14 @@ export const Schedule: React.FC<ScheduleProps> = ({
                         const dayName = ['Pn','Wt','Śr','Cz','Pt','Sb','Nd'][(day - 1) % 7];
                         const isWeekend = dayName === 'Sb' || dayName === 'Nd';
 
-                        let cellBg = isCustom 
-                          ? 'bg-slate-100 group-hover:bg-slate-200' 
-                          : (isWeekend ? 'bg-amber-50/50 group-hover:bg-amber-100/50' : 'bg-white group-hover:bg-slate-50/50');
+                        let cellBg = isCustom
+                          ? 'bg-slate-100 group-hover:bg-slate-200'
+                          : (isWeekend ? 'bg-amber-50/60 group-hover:bg-amber-100/60' : `${groupBg} group-hover:bg-slate-100`);
 
                         let checkboxColor = row.person ? getPersonCheckboxColor(row.person) : 'accent-emerald-600 focus:ring-emerald-500';
-                        
+
                         return (
-                          <td key={day} className={`px-1 py-2 whitespace-nowrap border-r border-slate-100 min-w-[40px] text-center ${rowIndex === rows.length - 1 ? 'border-b border-slate-200' : 'border-b border-slate-100'} ${cellBg}`}>
+                          <td key={day} className={`px-1 py-2 whitespace-nowrap border-r border-slate-200 min-w-[40px] text-center ${rowIndex === rows.length - 1 ? 'border-b-2 border-slate-300' : 'border-b border-slate-100'} ${cellBg}`}>
                             <input
                               type="checkbox"
                               className={`w-5 h-5 mx-auto border-slate-300 rounded cursor-pointer ${isCustom ? 'opacity-40 cursor-not-allowed' : ''} disabled:opacity-30 ${checkboxColor}`}
