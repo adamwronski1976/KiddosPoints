@@ -6,7 +6,35 @@ import { colorForId } from '../colorPalette';
 import * as XLSX from 'xlsx';
 
 const MONTH_NAMES = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'];
+const MONTH_NAMES_GENITIVE = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'];
 const DAY_LETTERS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb', 'Nd'];
+
+/** Granice (początek, koniec-wyłącznie) okresu miesięcznego/rocznego
+ *  zawierającego podany dzień - lustrzane odbicie backendowego
+ *  `_period_bounds` (custom_components/chore_manager/__init__.py). */
+function periodBounds(day: Date, period: 'month' | 'year'): [Date, Date] {
+  if (period === 'year') return [new Date(day.getFullYear(), 0, 1), new Date(day.getFullYear() + 1, 0, 1)];
+  return [new Date(day.getFullYear(), day.getMonth(), 1), new Date(day.getFullYear(), day.getMonth() + 1, 1)];
+}
+
+/** Rozkłada `timesPerPeriod` terminów równomiernie w obrębie bieżącego okresu -
+ *  lustrzane odbicie backendowego `_next_periodic_date`, żeby podgląd w
+ *  formularzu pokazywał realne terminy wyliczane przez integrację. */
+function computePeriodicSlots(today: Date, timesPerPeriod: number, period: 'month' | 'year'): Date[] {
+  const n = Math.max(1, timesPerPeriod);
+  const [pStart, pEnd] = periodBounds(today, period);
+  const periodLen = Math.round((pEnd.getTime() - pStart.getTime()) / 86400000);
+  const slots: Date[] = [];
+  for (let k = 0; k < n; k++) {
+    const offset = Math.max(0, Math.round(((k + 1) * periodLen) / n) - 1);
+    const d = new Date(pStart);
+    d.setDate(d.getDate() + offset);
+    slots.push(d);
+  }
+  return slots;
+}
+
+const formatSlotDate = (d: Date) => `${d.getDate()} ${MONTH_NAMES_GENITIVE[d.getMonth()]}`;
 
 interface ScheduleProps {
   users: User[];
@@ -67,21 +95,36 @@ export const Schedule: React.FC<ScheduleProps> = ({
   const tableRef = useRef<HTMLTableElement>(null);
   const [mode, setMode] = useState<'week' | 'month'>('week');
   const [calDate, setCalDate] = useState(() => new Date());
-  // Szkice edycji harmonogramu okresowego per wiersz (id wiersza -> wartości
-  // formularza) - osobny wpis na wiersz, żeby kilka osób pod tym samym
-  // "Niestandardowym harmonogramem" mogło być edytowanych niezależnie naraz.
-  const [periodicDrafts, setPeriodicDrafts] = useState<Record<string, { times: number; period: 'month' | 'year' }>>({});
+  // Generator reguł harmonogramu okresowego - popup modalny (zamiast
+  // ciasnych kontrolek w wierszu), z podglądem realnych terminów wyliczanych
+  // tak samo jak backend.
+  const [periodicModal, setPeriodicModal] = useState<{
+    taskId: string; taskName: string; rowId: string; personId: string; personName: string;
+    draft: { times: number; period: 'month' | 'year' };
+  } | null>(null);
 
-  const getPeriodicDraft = (rowId: string, existing?: PeriodicSchedule) =>
-    periodicDrafts[rowId] ?? { times: existing?.times_per_period ?? 1, period: existing?.period ?? 'month' };
-
-  const updatePeriodicDraft = (rowId: string, existing: PeriodicSchedule | undefined, updates: Partial<{ times: number; period: 'month' | 'year' }>) => {
-    setPeriodicDrafts(prev => ({ ...prev, [rowId]: { ...getPeriodicDraft(rowId, existing), ...updates } }));
+  const openPeriodicModal = (task: Task, row: TaskRow, existing?: PeriodicSchedule) => {
+    const person = users.find(u => u.id === row.person);
+    setPeriodicModal({
+      taskId: task.id,
+      taskName: task.name,
+      rowId: row.id,
+      personId: row.person,
+      personName: person?.name || row.person,
+      draft: { times: existing?.times_per_period ?? 1, period: existing?.period ?? 'month' },
+    });
   };
 
-  const savePeriodic = (taskId: string, personId: string, rowId: string, existing?: PeriodicSchedule) => {
-    const draft = getPeriodicDraft(rowId, existing);
-    onSetPeriodicSchedule(taskId, personId, draft.times, draft.period);
+  const savePeriodicModal = () => {
+    if (!periodicModal) return;
+    onSetPeriodicSchedule(periodicModal.taskId, periodicModal.personId, periodicModal.draft.times, periodicModal.draft.period);
+    setPeriodicModal(null);
+  };
+
+  const clearPeriodicModal = () => {
+    if (!periodicModal) return;
+    onClearPeriodicSchedule(periodicModal.taskId, periodicModal.personId);
+    setPeriodicModal(null);
   };
 
   const isWeeklyPattern = mode === 'week';
@@ -150,6 +193,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
   };
 
   return (
+    <>
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col w-full mb-8">
       <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3 flex-wrap">
@@ -336,51 +380,31 @@ export const Schedule: React.FC<ScheduleProps> = ({
                           </div>
                         )}
 
-                        {row.person && isCustom && (() => {
-                          const draft = getPeriodicDraft(row.id, periodic);
-                          return (
-                            <div className="mt-1.5 pl-1 flex items-center gap-1 flex-wrap">
-                              <input
-                                type="number"
-                                min={1}
-                                max={31}
-                                value={draft.times}
-                                onChange={e => updatePeriodicDraft(row.id, periodic, { times: parseInt(e.target.value, 10) || 1 })}
-                                className="w-10 px-1 py-0.5 text-[10px] border border-slate-300 rounded"
-                              />
-                              <span className="text-[9px] text-slate-500">x /</span>
-                              <select
-                                value={draft.period}
-                                onChange={e => updatePeriodicDraft(row.id, periodic, { period: e.target.value as 'month' | 'year' })}
-                                className="text-[10px] border border-slate-300 rounded"
-                              >
-                                <option value="month">miesiąc</option>
-                                <option value="year">rok</option>
-                              </select>
-                              <button
-                                onClick={() => savePeriodic(task.id, row.person, row.id, periodic)}
-                                className="inline-flex items-center gap-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                                title="Zapisz harmonogram okresowy"
-                              >
-                                <Repeat className="w-2.5 h-2.5" /> Zapisz
-                              </button>
-                              {isPeriodicRow && (
-                                <button
-                                  onClick={() => onClearPeriodicSchedule(task.id, row.person)}
-                                  className="text-slate-400 hover:text-red-600"
-                                  title="Usuń harmonogram okresowy"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              )}
-                              {isPeriodicRow && (
-                                <span className="w-full text-[9px] text-violet-600 font-medium">
-                                  Aktywne: {periodic!.times_per_period}x / {PERIOD_LABELS[periodic!.period]}
+                        {row.person && isCustom && (
+                          <div className="mt-1.5 pl-1 flex items-center gap-1.5 flex-wrap">
+                            {isPeriodicRow ? (
+                              <>
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2 py-0.5">
+                                  <Repeat className="w-2.5 h-2.5" />
+                                  {periodic!.times_per_period}x / {PERIOD_LABELS[periodic!.period]}
                                 </span>
-                              )}
-                            </div>
-                          );
-                        })()}
+                                <button
+                                  onClick={() => openPeriodicModal(task, row, periodic)}
+                                  className="text-[9.5px] text-violet-600 hover:text-violet-800 hover:underline"
+                                >
+                                  Edytuj
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => openPeriodicModal(task, row)}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-full px-2 py-0.5 transition-colors"
+                              >
+                                <Repeat className="w-3 h-3" /> Ustaw harmonogram
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {rowIndex === 0 && (
@@ -434,5 +458,106 @@ export const Schedule: React.FC<ScheduleProps> = ({
         </table>
       </div>
     </div>
+
+    {periodicModal && (() => {
+      const isEditingExisting = !!periodicSchedules[periodicModal.rowId];
+      const slots = computePeriodicSlots(new Date(), periodicModal.draft.times, periodicModal.draft.period);
+      const periodNoun = periodicModal.draft.period === 'month' ? 'miesiącu' : 'roku';
+      const periodPreviewNoun = periodicModal.draft.period === 'month' ? 'tym miesiącu' : 'tym roku';
+
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 animate-in fade-in duration-150"
+          onClick={() => setPeriodicModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                  <Repeat className="w-4 h-4 text-violet-600 flex-shrink-0" /> Harmonogram niestandardowy
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 truncate">{periodicModal.taskName} — {periodicModal.personName}</p>
+              </div>
+              <button
+                onClick={() => setPeriodicModal(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg flex-shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Typ powtarzania</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setPeriodicModal(m => m && ({ ...m, draft: { ...m.draft, period: 'month' } }))}
+                    className={`px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${periodicModal.draft.period === 'month' ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  >
+                    Miesięczny
+                  </button>
+                  <button
+                    onClick={() => setPeriodicModal(m => m && ({ ...m, draft: { ...m.draft, period: 'year' } }))}
+                    className={`px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${periodicModal.draft.period === 'year' ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  >
+                    Roczny
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                  Ile razy w {periodNoun}?
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={periodicModal.draft.times}
+                  onChange={e => setPeriodicModal(m => m && ({ ...m, draft: { ...m.draft, times: Math.max(1, parseInt(e.target.value, 10) || 1) } }))}
+                  className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3">
+                <p className="text-xs font-semibold text-violet-700 mb-1">Podgląd</p>
+                <p className="text-sm text-violet-900 leading-snug">
+                  Zadanie pojawi się do wykonania <strong>{periodicModal.draft.times}×</strong> w {periodNoun}, terminy rozłożone równomiernie w okresie.
+                </p>
+                <p className="text-xs text-violet-700 mt-1.5">
+                  Orientacyjnie w {periodPreviewNoun}: {slots.map(formatSlotDate).join(', ')}.
+                </p>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 flex justify-between items-center bg-slate-50">
+              {isEditingExisting ? (
+                <button onClick={clearPeriodicModal} className="text-sm font-medium text-red-600 hover:text-red-800">
+                  Usuń harmonogram
+                </button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPeriodicModal(null)}
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50"
+                >
+                  Anuluj
+                </button>
+                <button
+                  onClick={savePeriodicModal}
+                  className="px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-md hover:bg-violet-700"
+                >
+                  Zapisz
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+    </>
   );
 };
