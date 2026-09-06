@@ -84,6 +84,28 @@ const REWARD_KEYWORDS: [RegExp, string][] = [
   [/spacer|wyjści.*rodzinn/i, 'mdi:home-export-outline'],
 ];
 
+const PENALTY_KEYWORDS: [RegExp, string][] = [
+  [/pracy domowej|zadań domowych|librus/i, 'mdi:notebook-remove-outline'],
+  [/uwag.*zachowani|przeszkadzani/i, 'mdi:message-alert-outline'],
+  [/wulgaryzm|agresj[eę] słown|agresj[eę] fizyczn/i, 'mdi:emoticon-angry-outline'],
+  [/niszczeni.*mieni|cudzych rzeczy/i, 'mdi:hammer-wrench'],
+  [/spóźnieni/i, 'mdi:clock-alert-outline'],
+  [/plecak/i, 'mdi:bag-personal-off-outline'],
+  [/stroju na wf|legitymacj|obuwia zmienne/i, 'mdi:shoe-sneaker'],
+  [/ukrywani.*ocen|zatajeni/i, 'mdi:eye-off-outline'],
+  [/nieprzygotowani/i, 'mdi:book-alert-outline'],
+  [/naczy/i, 'mdi:silverware-variant'],
+  [/brudnych ubra/i, 'mdi:basket-off-outline'],
+  [/łóżku|przy komputerze wbrew/i, 'mdi:food-off-outline'],
+  [/bójk|prowokowani|agresj[aę] fizyczn/i, 'mdi:boxing-glove'],
+  [/bez pukania|prywatnoś/i, 'mdi:door-closed-lock'],
+  [/pyskowani|trzaskani.*drzwi|podnoszeni.*głos/i, 'mdi:volume-high'],
+  [/ignorowani/i, 'mdi:ear-hearing-off'],
+  [/pójści.*spa[ćc]|ustalonej godzin/i, 'mdi:bed-clock'],
+  [/limitu.*komputer|konsoli|tv bez zgod/i, 'mdi:timer-off-outline'],
+  [/telefonu.*noc|tablet.*noc/i, 'mdi:cellphone-off'],
+];
+
 function guess(name: string, table: [RegExp, string][], fallback: string): string {
   for (const [re, icon] of table) {
     if (re.test(name)) return icon;
@@ -93,3 +115,4 @@ function guess(name: string, table: [RegExp, string][], fallback: string): strin
 
 export const guessTaskIcon = (name: string) => guess(name, TASK_KEYWORDS, 'mdi:checkbox-marked-circle-outline');
 export const guessRewardIcon = (name: string) => guess(name, REWARD_KEYWORDS, 'mdi:gift-outline');
+export const guessPenaltyIcon = (name: string) => guess(name, PENALTY_KEYWORDS, 'mdi:alert-circle-outline');

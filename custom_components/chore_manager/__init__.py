@@ -53,6 +53,7 @@ DEFAULT_DATA = {
     ],
     "tasks": [],
     "rewards": [],
+    "penalties": [],
     "taskRows": {},
     "completions": {},
     "computerSlots": {},
@@ -75,6 +76,7 @@ DEFAULT_DATA = {
 _PATCHABLE_KEYS = [
     "tasks",
     "rewards",
+    "penalties",
     "taskRows",
     "completions",
     "computerSlots",

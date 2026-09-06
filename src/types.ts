@@ -70,6 +70,15 @@ export interface Reward {
   icon?: string;
 }
 
+export interface Penalty {
+  id: string;
+  name: string;
+  /** Liczba punktów odejmowana za to zdarzenie (wartość dodatnia). */
+  points: number;
+  description?: string;
+  icon?: string;
+}
+
 export interface TaskRow {
   id: string;
   person: Person;

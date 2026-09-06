@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { TaskRow, Completions, Person, Task, Reward, User, HistoryEntry, PendingApproval, OverdueItem } from './types';
-import { TASKS, REWARDS } from './data';
+import { TaskRow, Completions, Person, Task, Reward, Penalty, User, HistoryEntry, PendingApproval, OverdueItem } from './types';
+import { TASKS, REWARDS, PENALTIES } from './data';
 
 interface AppState {
   users: User[];
   tasks: Task[];
   rewards: Reward[];
+  penalties: Penalty[];
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
   computerSlots: Record<string, number>;
@@ -31,6 +32,7 @@ const DEFAULT_STATE: AppState = {
   users: DEFAULT_USERS,
   tasks: TASKS,
   rewards: REWARDS,
+  penalties: PENALTIES,
   taskRows: TASKS.reduce((acc, task) => {
     acc[task.id] = [{ id: `${task.id}_0`, person: "" }];
     return acc;
@@ -55,6 +57,7 @@ export function useAppStore() {
           users: parsed.users || DEFAULT_STATE.users,
           tasks: parsed.tasks || DEFAULT_STATE.tasks,
           rewards: parsed.rewards || DEFAULT_STATE.rewards,
+          penalties: parsed.penalties || DEFAULT_STATE.penalties,
           taskRows: parsed.taskRows || DEFAULT_STATE.taskRows,
           completions: parsed.completions || DEFAULT_STATE.completions,
           computerSlots: parsed.computerSlots || DEFAULT_STATE.computerSlots,
@@ -86,6 +89,14 @@ export function useAppStore() {
     setState(prev => ({
       ...prev,
       rewards: [...prev.rewards, { ...reward, id: newId }]
+    }));
+  };
+
+  const addPenalty = (penalty: Omit<Penalty, 'id'>) => {
+    const newId = `p_custom_${Date.now()}`;
+    setState(prev => ({
+      ...prev,
+      penalties: [...prev.penalties, { ...penalty, id: newId }]
     }));
   };
 
@@ -174,6 +185,13 @@ export function useAppStore() {
     }));
   };
 
+  const updatePenalty = (penaltyId: string, updates: Partial<Penalty>) => {
+    setState(prev => ({
+      ...prev,
+      penalties: prev.penalties.map(p => (p.id === penaltyId ? { ...p, ...updates } : p))
+    }));
+  };
+
   const removeTask = (taskId: string) => {
     if (confirm('Czy na pewno chcesz usunąć to zadanie całkowicie?')) {
       setState(prev => {
@@ -192,6 +210,12 @@ export function useAppStore() {
   const removeReward = (rewardId: string) => {
     if (confirm('Czy na pewno chcesz usunąć tę nagrodę?')) {
       setState(prev => ({ ...prev, rewards: prev.rewards.filter(r => r.id !== rewardId) }));
+    }
+  };
+
+  const removePenalty = (penaltyId: string) => {
+    if (confirm('Czy na pewno chcesz usunąć tę karę?')) {
+      setState(prev => ({ ...prev, penalties: prev.penalties.filter(p => p.id !== penaltyId) }));
     }
   };
 
@@ -244,6 +268,7 @@ export function useAppStore() {
       users: (importedState.users && Array.isArray(importedState.users) && importedState.users.length > 0) ? importedState.users : prev.users,
       tasks: (importedState.tasks && Array.isArray(importedState.tasks) && importedState.tasks.length > 0) ? importedState.tasks : prev.tasks,
       rewards: (importedState.rewards && Array.isArray(importedState.rewards) && importedState.rewards.length > 0) ? importedState.rewards : prev.rewards,
+      penalties: (importedState.penalties && Array.isArray(importedState.penalties) && importedState.penalties.length > 0) ? importedState.penalties : prev.penalties,
       taskRows: importedState.taskRows || prev.taskRows,
       completions: importedState.completions || prev.completions,
       computerSlots: importedState.computerSlots || prev.computerSlots,
@@ -299,6 +324,7 @@ export function useAppStore() {
     removeUser,
     addTask,
     addReward,
+    addPenalty,
     addTaskRow,
     updateTaskRowPerson,
     removeTaskRow,
@@ -306,8 +332,10 @@ export function useAppStore() {
     toggleWeeklyPattern,
     updateTask,
     updateReward,
+    updatePenalty,
     removeTask,
     removeReward,
+    removePenalty,
     updateComputerSlot,
     toggleCustomSchedule,
     assignUserToTask,

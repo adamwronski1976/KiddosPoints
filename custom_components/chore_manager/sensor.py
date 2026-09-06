@@ -194,6 +194,7 @@ class ChoreConfigSensor(SensorEntity):
             "users": data.get("users", []),
             "tasks": data.get("tasks", []),
             "rewards": data.get("rewards", []),
+            "penalties": data.get("penalties", []),
             "taskRows": data.get("taskRows", {}),
             "completions": data.get("completions", {}),
             "computerSlots": data.get("computerSlots", {}),

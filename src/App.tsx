@@ -5,6 +5,7 @@ import { Summary } from './components/Summary';
 import { Schedule } from './components/Schedule';
 import { TasksManager } from './components/TasksManager';
 import { RewardsManager } from './components/RewardsManager';
+import { PenaltiesManager } from './components/PenaltiesManager';
 import { ComputerTime } from './components/ComputerTime';
 import { HistoryLog } from './components/HistoryLog';
 import { UserPanelHub } from './components/UserPanelHub';
@@ -27,6 +28,7 @@ export default function App({ hass }: AppProps) {
     state,
     addTask,
     addReward,
+    addPenalty,
     addTaskRow,
     updateTaskRowPerson,
     removeTaskRow,
@@ -43,7 +45,9 @@ export default function App({ hass }: AppProps) {
     assignUserToTask,
     updateTask,
     updateReward,
-    removeReward
+    removeReward,
+    updatePenalty,
+    removePenalty
   } = hass ? haStore : localStore;
 
   // Akcje punktowe (zatwierdzanie, ręczna korekta) - dostępne tylko z prawdziwym
@@ -56,7 +60,7 @@ export default function App({ hass }: AppProps) {
   } : undefined;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'admin' | 'tasks' | 'rewards' | 'user' | 'lovelace'>('admin');
+  const [activeTab, setActiveTab] = useState<'admin' | 'tasks' | 'rewards' | 'penalties' | 'user' | 'lovelace'>('admin');
 
   // Stan punktów tymczasowych/dynamicznych dla symulatora HA
   const [userPointsOverride, setUserPointsOverride] = useState<Record<string, number>>({});
@@ -327,6 +331,12 @@ export default function App({ hass }: AppProps) {
               Nagrody
             </button>
             <button
+              onClick={() => setActiveTab('penalties')}
+              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'penalties' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              Kary
+            </button>
+            <button
               onClick={() => setActiveTab('user')}
               className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'user' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
             >
@@ -406,6 +416,18 @@ export default function App({ hass }: AppProps) {
               onAddReward={addReward}
               onUpdateReward={updateReward}
               onRemoveReward={removeReward}
+            />
+          </div>
+        )}
+
+        {/* WIDOK 3b: KARY */}
+        {activeTab === 'penalties' && (
+          <div className="pb-12">
+            <PenaltiesManager
+              penalties={state.penalties}
+              onAddPenalty={addPenalty}
+              onUpdatePenalty={updatePenalty}
+              onRemovePenalty={removePenalty}
             />
           </div>
         )}

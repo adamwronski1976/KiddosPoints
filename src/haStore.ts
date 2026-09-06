@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval, Task, Reward, OverdueItem } from './types';
+import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval, Task, Reward, Penalty, OverdueItem } from './types';
 
 const CONFIG_ENTITY = 'sensor.chore_manager_config';
 const HISTORY_ENTITY = 'sensor.chore_manager_history';
@@ -22,6 +22,7 @@ interface HaAppState {
   users: User[];
   tasks: Task[];
   rewards: Reward[];
+  penalties: Penalty[];
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
   computerSlots: Record<string, number>;
@@ -35,6 +36,7 @@ const EMPTY_STATE: HaAppState = {
   users: [],
   tasks: [],
   rewards: [],
+  penalties: [],
   taskRows: {},
   completions: {},
   computerSlots: {},
@@ -62,6 +64,7 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
       users: attrs.users || [],
       tasks: attrs.tasks || [],
       rewards: attrs.rewards || [],
+      penalties: attrs.penalties || [],
       taskRows: attrs.taskRows || {},
       completions: attrs.completions || {},
       computerSlots: attrs.computerSlots || {},
@@ -87,6 +90,11 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
   const addReward = (reward: Omit<Reward, 'id'>) => {
     const newId = `r_custom_${Date.now()}`;
     patch({ rewards: [...state.rewards, { ...reward, id: newId }] });
+  };
+
+  const addPenalty = (penalty: Omit<Penalty, 'id'>) => {
+    const newId = `p_custom_${Date.now()}`;
+    patch({ penalties: [...state.penalties, { ...penalty, id: newId }] });
   };
 
   const addTaskRow = (taskId: string) => {
@@ -152,6 +160,10 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     patch({ rewards: state.rewards.map(r => (r.id === rewardId ? { ...r, ...updates } : r)) });
   };
 
+  const updatePenalty = (penaltyId: string, updates: Partial<Penalty>) => {
+    patch({ penalties: state.penalties.map(p => (p.id === penaltyId ? { ...p, ...updates } : p)) });
+  };
+
   const removeTask = (taskId: string) => {
     if (!confirm('Czy na pewno chcesz usunąć to zadanie całkowicie?')) return;
     const newTaskRows = { ...state.taskRows };
@@ -162,6 +174,11 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
   const removeReward = (rewardId: string) => {
     if (!confirm('Czy na pewno chcesz usunąć tę nagrodę?')) return;
     patch({ rewards: state.rewards.filter(r => r.id !== rewardId) });
+  };
+
+  const removePenalty = (penaltyId: string) => {
+    if (!confirm('Czy na pewno chcesz usunąć tę karę?')) return;
+    patch({ penalties: state.penalties.filter(p => p.id !== penaltyId) });
   };
 
   const updateComputerSlot = (person: string, day: number, slots: number) => {
@@ -195,6 +212,7 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     if (Array.isArray(importedState.users) && importedState.users.length > 0) next.users = importedState.users;
     if (Array.isArray(importedState.tasks) && importedState.tasks.length > 0) next.tasks = importedState.tasks;
     if (Array.isArray(importedState.rewards) && importedState.rewards.length > 0) next.rewards = importedState.rewards;
+    if (Array.isArray(importedState.penalties) && importedState.penalties.length > 0) next.penalties = importedState.penalties;
     if (importedState.taskRows) next.taskRows = importedState.taskRows;
     if (importedState.completions) next.completions = importedState.completions;
     if (importedState.computerSlots) next.computerSlots = importedState.computerSlots;
@@ -208,6 +226,7 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     patch({
       tasks: [],
       rewards: [],
+      penalties: [],
       taskRows: {},
       completions: {},
       computerSlots: {},
@@ -273,6 +292,7 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     removeUser,
     addTask,
     addReward,
+    addPenalty,
     addTaskRow,
     updateTaskRowPerson,
     removeTaskRow,
@@ -291,6 +311,8 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     resetUserPoints,
     updateTask,
     updateReward,
+    updatePenalty,
     removeReward,
+    removePenalty,
   };
 }

@@ -1,4 +1,4 @@
-import { Person, Task, Reward } from './types';
+import { Person, Task, Reward, Penalty } from './types';
 
 export const PEOPLE: Person[] = ["Adam", "Nina", "Krzysiek", "Tomek", "Dzieci", "Rodzice", "Wszyscy"];
 
@@ -84,4 +84,26 @@ export const REWARDS: Reward[] = [
   { id: 'r28', name: "Dzień bez pytania o szkołę (24 godziny)", points: 15 },
   { id: 'r29', name: "Nocny seans filmowy (oglądanie do późna)", points: 20 },
   { id: 'r30', name: "Zwolnienie ze spaceru / wyjścia rodzinnego", points: 15 },
+];
+
+export const PENALTIES: Penalty[] = [
+  { id: 'p1', name: "Brak odrobionej pracy domowej", points: 3 },
+  { id: 'p2', name: "Uwaga w Librusie za zachowanie lub przeszkadzanie na lekcji", points: 5 },
+  { id: 'p3', name: "Uwaga za wulgaryzmy, agresję słowną lub fizyczną w szkole", points: 10 },
+  { id: 'p4', name: "Niszczenie mienia szkolnego lub cudzych rzeczy", points: 10 },
+  { id: 'p5', name: "Spóźnienie na lekcję z własnej winy", points: 2 },
+  { id: 'p6', name: "Brak spakowanego plecaka na kolejny dzień (brak zeszytów, książek, przyborów)", points: 2 },
+  { id: 'p7', name: "Zapomnienie stroju na WF / legitymacji szkolnej / obuwia zmiennego", points: 2 },
+  { id: 'p8', name: "Ukrywanie złej oceny lub zatajenie informacji ze szkoły przed rodzicami", points: 8 },
+  { id: 'p9', name: "Nieprzygotowanie do zajęć", points: 3 },
+  { id: 'p10', name: "Wynoszenie naczyń do pokoju i zostawianie ich tam po posiłku", points: 1 },
+  { id: 'p11', name: "Porzucenie brudnych ubrań na podłodze/krześle zamiast wrzucenia do kosza na pranie", points: 1 },
+  { id: 'p12', name: "Jedzenie posiłków lub przekąsek w łóżku/przy komputerze wbrew zasadom", points: 2 },
+  { id: 'p13', name: "Bójka, agresja fizyczna lub celowe prowokowanie brata", points: 8 },
+  { id: 'p14', name: "Wchodzenie do pokoju brata lub rodziców bez pukania / naruszanie prywatności", points: 2 },
+  { id: 'p15', name: "Pyskowanie, podnoszenie głosu, ostentacyjne trzaskanie drzwiami w reakcji na polecenie rodzica", points: 5 },
+  { id: 'p16', name: "Ignorowanie bezpośrednich próśb lub komunikatów rodziców (udawanie, że się nie słyszy)", points: 3 },
+  { id: 'p17', name: "Odmowa pójścia spać o ustalonej godzinie w tygodniu szkolnym", points: 3 },
+  { id: 'p18', name: "Przekroczenie przyznanego limitu czasu na komputerze, konsoli lub TV bez zgody", points: 3 },
+  { id: 'p19', name: "Korzystanie z telefonu/tabletu w nocy, w ukryciu lub podczas posiłków", points: 5 },
 ];

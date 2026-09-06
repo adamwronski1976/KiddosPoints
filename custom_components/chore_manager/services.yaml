@@ -250,8 +250,8 @@ update_config:
     patch:
       name: Fragment konfiguracji
       description: >-
-        Obiekt z dowolną kombinacją kluczy: users, tasks, rewards, taskRows,
-        completions, customRewardCosts, customTaskPoints, computerSlots,
+        Obiekt z dowolną kombinacją kluczy: users, tasks, rewards, penalties,
+        taskRows, completions, customRewardCosts, customTaskPoints, computerSlots,
         customSchedule. Podany klucz zastępuje całą odpowiadającą mu wartość.
       required: true
       example: '{"tasks": [{"id": "t1", "name": "Zmywarka", "points": 10}]}'
