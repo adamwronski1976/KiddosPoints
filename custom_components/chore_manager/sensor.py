@@ -149,8 +149,22 @@ class ChorePendingCountSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        """Lista oczekujących zadań ze szczegółami dla karty Lovelace."""
-        items = _stored_data(self.hass).get("pending_approvals", []) if self.hass else []
+        """Lista oczekujących zadań ze szczegółami dla karty Lovelace - wzbogacona
+        o user_name/task_icon (żeby karta zatwierdzania nie musiała sama
+        odgadywać ich z surowego entity_id/task_id)."""
+        data = _stored_data(self.hass) if self.hass else {}
+        raw_items = data.get("pending_approvals", [])
+        users_by_entity = {u.get("haEntityId"): u for u in data.get("users", [])}
+        tasks_by_id = {t["id"]: t for t in data.get("tasks", [])}
+        items = []
+        for p in raw_items:
+            user = users_by_entity.get(p.get("user"), {})
+            task = tasks_by_id.get(p.get("task_id"), {})
+            items.append({
+                **p,
+                "user_name": p.get("user_name") or user.get("name", p.get("user")),
+                "task_icon": task.get("icon") or "mdi:checkbox-marked-circle-outline",
+            })
         return {"items": items}
 
 

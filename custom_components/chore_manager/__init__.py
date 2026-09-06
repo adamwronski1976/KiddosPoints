@@ -246,6 +246,9 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
                 _refresh_overdue_sensor(hass)
                 _refresh_upcoming_sensor(hass)
 
+        task_name = _task_name(hass, task_id) or task_id
+        await _log_history(hass, user_entity_id, f"Odrzucono: {task_name} — {reason}")
+
         hass.bus.async_fire(EVENT_TASK_REJECTED, {
             "user": user_entity_id,
             "task_id": task_id,
