@@ -227,7 +227,9 @@ export class PendingApprovalsCard extends LitElement {
   }
 }
 
-customElements.define('pending-approvals-card', PendingApprovalsCard);
+if (!customElements.get('pending-approvals-card')) {
+  customElements.define('pending-approvals-card', PendingApprovalsCard);
+}
 
 (window as any).customCards = (window as any).customCards || [];
 (window as any).customCards.push({

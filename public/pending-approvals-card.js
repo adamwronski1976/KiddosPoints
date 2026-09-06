@@ -146,7 +146,7 @@
         font-weight: 600;
         cursor: pointer;
       }
-    `}};customElements.define("pending-approvals-card",Q);window.customCards=window.customCards||[];window.customCards.push({type:"pending-approvals-card",name:"KiddosPoints - Do zatwierdzenia",description:"Kolejka zada\u0144 oczekuj\u0105cych na zatwierdzenie rodzica, z odrzuceniem po komentarzu."});})();
+    `}};customElements.get("pending-approvals-card")||customElements.define("pending-approvals-card",Q);window.customCards=window.customCards||[];window.customCards.push({type:"pending-approvals-card",name:"KiddosPoints - Do zatwierdzenia",description:"Kolejka zada\u0144 oczekuj\u0105cych na zatwierdzenie rodzica, z odrzuceniem po komentarzu."});})();
 /*! Bundled license information:
 
 @lit/reactive-element/css-tag.js:
