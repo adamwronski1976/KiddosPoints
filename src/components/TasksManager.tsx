@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Task, TaskRow } from '../types';
 import { guessTaskIcon } from '../iconGuess';
 import { MdiIcon } from './MdiIcon';
+import { colorForId } from '../colorPalette';
 import { ClipboardList, Plus, Pencil, Trash2, Check, X } from 'lucide-react';
 
 interface Props {
@@ -120,7 +121,9 @@ export const TasksManager: React.FC<Props> = ({ tasks, taskRows, onAddTask, onUp
               <div key={task.id}>{editRow}</div>
             ) : (
               <div key={task.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 group">
-                <MdiIcon icon={task.icon || 'mdi:checkbox-marked-circle-outline'} className="text-xl text-emerald-600 flex-shrink-0" />
+                <span className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${colorForId(task.id).bg}`}>
+                  <MdiIcon icon={task.icon || 'mdi:checkbox-marked-circle-outline'} className={`text-lg ${colorForId(task.id).text}`} />
+                </span>
                 <div className="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
                   <span className="font-medium text-slate-800">{task.name}</span>
                   {task.description && <span className="text-xs text-slate-400 truncate">{task.description}</span>}

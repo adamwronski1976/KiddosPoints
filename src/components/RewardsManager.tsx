@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Reward } from '../types';
 import { guessRewardIcon } from '../iconGuess';
 import { MdiIcon } from './MdiIcon';
+import { colorForId } from '../colorPalette';
 import { Gift, Plus, Pencil, Trash2, Check, X } from 'lucide-react';
 
 interface Props {
@@ -117,7 +118,9 @@ export const RewardsManager: React.FC<Props> = ({ rewards, onAddReward, onUpdate
               <div key={reward.id}>{editRow}</div>
             ) : (
               <div key={reward.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 group">
-                <MdiIcon icon={reward.icon || 'mdi:gift-outline'} className="text-xl text-pink-600 flex-shrink-0" />
+                <span className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${colorForId(reward.id).bg}`}>
+                  <MdiIcon icon={reward.icon || 'mdi:gift-outline'} className={`text-lg ${colorForId(reward.id).text}`} />
+                </span>
                 <div className="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
                   <span className="font-medium text-slate-800">{reward.name}</span>
                   {reward.description && <span className="text-xs text-slate-400 truncate">{reward.description}</span>}
