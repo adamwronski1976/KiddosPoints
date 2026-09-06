@@ -3,11 +3,13 @@ import logging
 import time
 import uuid
 from datetime import date, timedelta
-from homeassistant.core import HomeAssistant, ServiceCall
+from pathlib import Path
+from homeassistant.core import HomeAssistant, ServiceCall, CoreState, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_call_later, async_track_time_change
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.util import dt as dt_util
 from .const import (
     DOMAIN,
@@ -85,10 +87,101 @@ _PATCHABLE_KEYS = [
 ]
 
 
+# Wersja dołączonych zasobów frontendu (karty Lovelace). Bump przy każdej
+# zmianie plików w frontend/, żeby przeglądarki i rejestr zasobów Lovelace nie
+# trzymały starej wersji ze swojego cache (dopisywane jako ?v= do URL-a).
+FRONTEND_VERSION = "1.5.0"
+FRONTEND_URL_BASE = "/chore_manager_static"
+FRONTEND_MODULES = [
+    {"filename": "chore-manager-card.js", "version": FRONTEND_VERSION},
+    {"filename": "pending-approvals-card.js", "version": FRONTEND_VERSION},
+]
+
+
+class _JSModuleRegistration:
+    """Serwuje karty Lovelace dołączone do integracji (frontend/) i rejestruje
+    je jako zasoby Lovelace w trybie storage - bez ręcznego kopiowania do
+    /config/www i bez ręcznego dodawania zasobu w Ustawieniach → Pulpity →
+    Zasoby. Aktualizacja integracji przez HACS aktualizuje też kartę.
+    Wzorzec za: https://gist.github.com/KipK/3cf706ac89573432803aaa2f5ca40492
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+        self.lovelace = hass.data.get("lovelace")
+
+    async def async_register(self) -> None:
+        await self._async_register_path()
+        # Nazwa atrybutu trybu Lovelace zmieniała się między wersjami HA -
+        # sprawdzamy oba warianty, domyślnie zakładając "yaml" (bez rejestracji).
+        mode = getattr(self.lovelace, "mode", getattr(self.lovelace, "resource_mode", "yaml"))
+        if mode == "storage":
+            await self._async_wait_for_lovelace_resources()
+        else:
+            _LOGGER.debug(
+                "Lovelace w trybie '%s' (nie 'storage') - pomijam automatyczną "
+                "rejestrację zasobu, dodaj go ręcznie w Ustawieniach → Pulpity → Zasoby.",
+                mode,
+            )
+
+    async def _async_register_path(self) -> None:
+        frontend_dir = Path(__file__).parent / "frontend"
+        try:
+            await self.hass.http.async_register_static_paths([
+                StaticPathConfig(FRONTEND_URL_BASE, str(frontend_dir), False)
+            ])
+        except RuntimeError:
+            # Już zarejestrowane (np. przeładowanie wpisu konfiguracji) - OK.
+            pass
+
+    async def _async_wait_for_lovelace_resources(self) -> None:
+        async def _check_loaded(_now) -> None:
+            if self.lovelace.resources.loaded:
+                await self._async_register_modules()
+            else:
+                async_call_later(self.hass, 5, _check_loaded)
+
+        await _check_loaded(None)
+
+    async def _async_register_modules(self) -> None:
+        existing = [
+            r for r in self.lovelace.resources.async_items()
+            if r["url"].startswith(FRONTEND_URL_BASE)
+        ]
+        for module in FRONTEND_MODULES:
+            url = f"{FRONTEND_URL_BASE}/{module['filename']}"
+            match = next((r for r in existing if r["url"].split("?")[0] == url), None)
+            if match is None:
+                await self.lovelace.resources.async_create_item(
+                    {"res_type": "module", "url": f"{url}?v={module['version']}"}
+                )
+            elif match["url"] != f"{url}?v={module['version']}":
+                await self.lovelace.resources.async_update_item(
+                    match["id"], {"res_type": "module", "url": f"{url}?v={module['version']}"}
+                )
+
+
+async def _async_register_frontend(hass: HomeAssistant) -> None:
+    """Uruchamia rejestrację karty - odłożoną do startu HA (Lovelace musi być
+    już gotowy), zgodnie z wymaganiami wzorca JSModuleRegistration."""
+    if hass.data.get(DOMAIN, {}).get("frontend_registered"):
+        return
+    hass.data.setdefault(DOMAIN, {})["frontend_registered"] = True
+
+    async def _do_register(_event=None) -> None:
+        await _JSModuleRegistration(hass).async_register()
+
+    if hass.state == CoreState.running:
+        await _do_register()
+    else:
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _do_register)
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Konfiguracja integracji Chore Manager z poziomu configuration.yaml."""
     hass.data.setdefault(DOMAIN, {})
     await _async_setup_services(hass)
+    await _async_register_frontend(hass)
     return True
 
 
@@ -108,6 +201,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data.setdefault("history", [])
         data.setdefault("occurrences", {})
         data.setdefault("periodicSchedules", {})
+        data.setdefault("penalties", [])
 
     hass.data[DOMAIN]["store"] = store
     hass.data[DOMAIN]["data"] = data
@@ -115,6 +209,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].setdefault("pending_awards", {})
 
     await _async_setup_services(hass)
+    await _async_register_frontend(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     await _ensure_occurrences(hass)

@@ -24,21 +24,22 @@
 
 ## 🚀 Instalacja
 
+Karta Lovelace jest wbudowana w integrację (serwowana bezpośrednio z
+`custom_components/chore_manager/frontend/`) — **jedna instalacja wystarcza**,
+bez ręcznego kopiowania plików do `/config/www` i bez dodawania zasobu w
+Ustawieniach → Pulpity → Zasoby.
+
 ### Sposób 1: Przez HACS (Zalecany)
 
 1. W Home Assistant otwórz **HACS** → **Integracje** → Trzy kropki w prawym górnym rogu → **Niestandardowe repozytoria**.
 2. Wklej URL swojego repozytorium GitHub i wybierz kategorię: `Integration`.
 3. Kliknij **Pobierz** i zrestartuj Home Assistant.
-4. Powtórz krok dla karty Lovelace (Kategoria: `Lovelace`).
+4. Po restarcie karta jest od razu dostępna jako `type: custom:chore-manager-card` — bez dodatkowych kroków.
 
 ### Sposób 2: Instalacja Ręczna
 
-1. Skopiuj katalog `custom_components/chore_manager/` do swojego folderu Home Assistant: `/config/custom_components/chore_manager/`.
-2. Skopiuj plik `dist/chore-manager-card.js` do katalogu `/config/www/chore-manager-card.js`.
-3. W Home Assistant przejdź do: **Ustawienia** → **Pulpity** → **Zasoby** i dodaj:
-   - **URL:** `/local/chore-manager-card.js`
-   - **Typ zasobu:** Moduł JavaScript
-4. Zrestartuj Home Assistant.
+1. Skopiuj katalog `custom_components/chore_manager/` (razem z podfolderem `frontend/`) do swojego folderu Home Assistant: `/config/custom_components/chore_manager/`.
+2. Zrestartuj Home Assistant.
 
 ---
 
@@ -107,12 +108,14 @@ action:
 ```text
 ├── custom_components/
 │   └── chore_manager/
-│       ├── __init__.py        # Rejestracja usług i zdarzeń w HA
+│       ├── __init__.py        # Rejestracja usług, zdarzeń i karty Lovelace w HA
 │       ├── config_flow.py     # Konfiguracja przez UI w Home Assistant
 │       ├── const.py           # Stałe i konfiguracja
 │       ├── manifest.json      # Metadane komponentu HA
 │       ├── sensor.py          # Sensory punktacji i oczekujących zadań
-│       └── services.yaml      # Dokumentacja parametrów usług w HA
+│       ├── services.yaml      # Dokumentacja parametrów usług w HA
+│       └── frontend/          # Skompilowana karta Lovelace, serwowana wprost
+│                               # przez integrację (bez /config/www)
 ├── lovelace/
 │   └── chore-manager-card.js  # Skompilowana karta Lit do wrzucenia do /config/www/
 ├── src/
