@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Completions, Person, TaskRow, Task, User } from '../types';
 import { Calendar, Download, RefreshCw, Plus, Minus } from 'lucide-react';
+import { MdiIcon } from './MdiIcon';
 import * as XLSX from 'xlsx';
 
 interface ScheduleProps {
@@ -210,7 +211,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                         >
                           <div className="flex justify-between items-start gap-2">
                             <div className="flex-1 flex items-center gap-1.5">
-                              <span className="text-base leading-none">{task.icon || '📌'}</span>
+                              <MdiIcon icon={task.icon || 'mdi:checkbox-marked-circle-outline'} className="text-lg leading-none flex-shrink-0" />
                               <span className="block">{task.name}</span>
                             </div>
                             {!personId && (

@@ -4,6 +4,7 @@ import { HomeAssistantLike } from '../haStore';
 import { Schedule } from './Schedule';
 import { HistoryLog } from './HistoryLog';
 import { UserSettingsForm } from './UserSettingsForm';
+import { MdiIcon } from './MdiIcon';
 import {
   Shield, ShieldAlert, Star, Gift, ClipboardList, ClipboardCheck,
   CheckCircle2, XCircle, PlusCircle, MinusCircle, RotateCcw, Link2, Settings2, Trash2
@@ -269,7 +270,7 @@ export const UserPanel: React.FC<Props> = ({
                     : 'bg-slate-50 text-slate-400 border-slate-200'
                 }`}
               >
-                <span>{r.icon || '🎁'}</span> {r.name} — {r.points} pkt
+                <MdiIcon icon={r.icon || 'mdi:gift-outline'} className="text-sm" /> {r.name} — {r.points} pkt
               </span>
             ))}
           </div>
@@ -292,7 +293,7 @@ export const UserPanel: React.FC<Props> = ({
                 onClick={() => onAssign(t.id, user.id)}
                 className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 text-slate-600 font-medium transition-colors"
               >
-                <span>{t.icon || '📌'}</span> {t.name} ({t.points} pkt)
+                <MdiIcon icon={t.icon || 'mdi:checkbox-marked-circle-outline'} className="text-sm" /> {t.name} ({t.points} pkt)
               </button>
             ))
           )}
