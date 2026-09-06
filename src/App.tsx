@@ -7,7 +7,8 @@ import { Rewards } from './components/Rewards';
 import { ComputerTime } from './components/ComputerTime';
 import { UserManagement } from './components/UserManagement';
 import { HistoryLog } from './components/HistoryLog';
-import { DownloadCloud, UploadCloud, LayoutDashboard, Settings, Github, Copy, CheckCircle2, ShieldCheck, Terminal } from 'lucide-react';
+import { UserPanel } from './components/UserPanel';
+import { DownloadCloud, UploadCloud, Settings, ShieldCheck, UserCircle2 } from 'lucide-react';
 import './chore-manager-card';
 
 const NO_HASS: HomeAssistantLike = { states: {}, callService: () => {} };
@@ -41,12 +42,23 @@ export default function App({ hass }: AppProps) {
     resetData,
     addUser,
     updateUser,
-    removeUser
+    removeUser,
+    assignUserToTask
   } = hass ? haStore : localStore;
 
+  // Akcje punktowe (zatwierdzanie, ręczna korekta) - dostępne tylko z prawdziwym
+  // hass, bo wołają realne usługi chore_manager, a nie update_config.
+  const pointActions = hass ? {
+    approveApproval: haStore.approveApproval,
+    rejectApproval: haStore.rejectApproval,
+    addPointsToUser: haStore.addPointsToUser,
+    resetUserPoints: haStore.resetUserPoints,
+  } : undefined;
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'admin' | 'lovelace' | 'github'>('admin');
-  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+  // 'admin' | 'lovelace' | `user:<id>` (jedna zakładka na każdego użytkownika,
+  // tworzona/kasowana automatycznie razem z listą state.users).
+  const [activeTab, setActiveTab] = useState<string>('admin');
 
   // Stan punktów tymczasowych/dynamicznych dla symulatora HA
   const [userPointsOverride, setUserPointsOverride] = useState<Record<string, number>>({});
@@ -250,6 +262,16 @@ export default function App({ hass }: AppProps) {
     }
   }, [hass, hassMock, activeTab]);
 
+  // Jeśli aktywna zakładka to panel usuniętego już użytkownika, wróć do panelu głównego.
+  useEffect(() => {
+    if (activeTab.startsWith('user:')) {
+      const userId = activeTab.slice('user:'.length);
+      if (!state.users.some(u => u.id === userId)) {
+        setActiveTab('admin');
+      }
+    }
+  }, [activeTab, state.users]);
+
   const handleExportBackup = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
     const downloadAnchorNode = document.createElement('a');
@@ -281,12 +303,6 @@ export default function App({ hass }: AppProps) {
     reader.readAsText(file);
   };
 
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedSnippet(id);
-    setTimeout(() => setCopiedSnippet(null), 2500);
-  };
-
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 font-sans pb-12 w-full">
       <header className="bg-white shadow-sm mb-6 w-full sticky top-0 z-30 border-b border-slate-200">
@@ -303,28 +319,31 @@ export default function App({ hass }: AppProps) {
             </div>
           </div>
           
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <button 
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 flex-wrap gap-y-1">
+            <button
               onClick={() => setActiveTab('admin')}
               className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'admin' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Panel Zarządzania (SPA)
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('lovelace')}
               className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'lovelace' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Karta Lovelace (Podgląd HA)
             </button>
-            <button 
-              onClick={() => setActiveTab('github')}
-              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'github' ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              <Github className="w-4 h-4" />
-              GitHub & HACS
-            </button>
+            {state.users.map(u => (
+              <button
+                key={u.id}
+                onClick={() => setActiveTab(`user:${u.id}`)}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-1.5 ${activeTab === `user:${u.id}` ? 'bg-white shadow text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <UserCircle2 className="w-4 h-4" />
+                Panel {u.name}
+              </button>
+            ))}
           </div>
-          
+
           <div className="flex items-center gap-2">
             <input type="file" accept=".json" className="hidden" ref={fileInputRef} onChange={handleImportBackup} />
             <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-300 shadow-sm text-xs font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50">
@@ -370,120 +389,39 @@ export default function App({ hass }: AppProps) {
           </div>
         )}
 
-        {/* WIDOK 2: GITHUB & HACS DOKUMENTACJA I PLIKI */}
-        {activeTab === 'github' && (
-          <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between pb-6 border-b border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-slate-900 text-white rounded-xl">
-                    <Github className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900">Repozytorium GitHub & HACS gotowe do publikacji</h2>
-                    <p className="text-sm text-slate-500">Wszystkie pliki integracji oraz skompilowany frontend są już wygenerowane w repozytorium.</p>
-                  </div>
-                </div>
-                <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4" /> Gotowe do pusha
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                <div>
-                  <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
-                    <Terminal className="w-4 h-4 text-indigo-600" />
-                    Kroki wrzucenia na GitHub:
-                  </h3>
-                  <div className="bg-slate-900 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-2 leading-relaxed">
-                    <p className="text-slate-400"># 1. Inicjalizacja i dodanie plików</p>
-                    <p>git init</p>
-                    <p>git add .</p>
-                    <p>git commit -m "feat: KiddosPoints integration & lovelace card"</p>
-                    <p className="text-slate-400"># 2. Utwórz repozytorium na github.com i połącz</p>
-                    <p>git branch -M main</p>
-                    <p>git remote add origin https://github.com/twoj-login/kiddos-points.git</p>
-                    <p>git push -u origin main</p>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="font-bold text-slate-800 text-sm mb-3">
-                    Struktura plików przygotowana dla HACS:
-                  </h3>
-                  <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl font-mono text-xs space-y-1.5 text-slate-700">
-                    <p className="font-bold text-indigo-600">📁 custom_components/chore_manager/</p>
-                    <p className="pl-4">├── __init__.py (usługi, zdarzenia busa, magazyn)</p>
-                    <p className="pl-4">├── config_flow.py (dodawanie przez UI w HA)</p>
-                    <p className="pl-4">├── sensor.py (sensory punktów i weryfikacji)</p>
-                    <p className="pl-4">├── const.py & manifest.json</p>
-                    <p className="pl-4">└── services.yaml (dokumentacja w Developer Tools)</p>
-                    <p className="font-bold text-emerald-600 mt-2">📁 lovelace/ & public/</p>
-                    <p className="pl-4">└── chore-manager-card.js (skompilowany Lit bundle)</p>
-                    <p className="font-bold text-amber-600 mt-2">📄 hacs.json & README.md (ze specyfikacją)</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8 space-y-6">
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm font-bold text-slate-800">Kod do wklejenia w Lovelace Dashboard:</label>
-                    <button 
-                      onClick={() => copyToClipboard(`type: custom:chore-manager-card\ntitle: Obowiązki Domowe\nshow_rewards: true\nshow_pc_time: true`, 'lovelace_yaml')}
-                      className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
-                    >
-                      {copiedSnippet === 'lovelace_yaml' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      {copiedSnippet === 'lovelace_yaml' ? 'Skopiowano!' : 'Kopiuj YAML'}
-                    </button>
-                  </div>
-                  <pre className="bg-slate-900 text-emerald-400 p-3.5 rounded-xl font-mono text-xs overflow-x-auto">
-{`type: custom:chore-manager-card
-title: Obowiązki Domowe
-show_rewards: true
-show_pc_time: true`}
-                  </pre>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm font-bold text-slate-800">Przykładowa automatyzacja Home Assistant (Powiadomienia PUSH do rodzica):</label>
-                    <button 
-                      onClick={() => copyToClipboard(`alias: "Powiadomienie: Zadanie do akceptacji"
-trigger:
-  - platform: event
-    event_type: chore_manager_task_completed
-    event_data:
-      status: pending_approval
-action:
-  - service: notify.notify
-    data:
-      title: "🧹 Zadanie do zatwierdzenia!"
-      message: "{{ trigger.event.data.user }} wykonał(a) zadanie '{{ trigger.event.data.task_name }}' (+{{ trigger.event.data.points }} pkt)."`, 'auto_yaml')}
-                      className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
-                    >
-                      {copiedSnippet === 'auto_yaml' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      {copiedSnippet === 'auto_yaml' ? 'Skopiowano!' : 'Kopiuj YAML'}
-                    </button>
-                  </div>
-                  <pre className="bg-slate-900 text-blue-300 p-3.5 rounded-xl font-mono text-xs overflow-x-auto">
-{`alias: "Powiadomienie: Zadanie do akceptacji"
-trigger:
-  - platform: event
-    event_type: chore_manager_task_completed
-    event_data:
-      status: pending_approval
-action:
-  - service: notify.notify
-    data:
-      title: "🧹 Zadanie do zatwierdzenia!"
-      message: "{{ trigger.event.data.user }} wykonał(a) zadanie '{{ trigger.event.data.task_name }}' (+{{ trigger.event.data.points }} pkt)."`}
-                  </pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* WIDOK 2: PANEL OSOBISTY UŻYTKOWNIKA */}
+        {activeTab.startsWith('user:') && (() => {
+          const userId = activeTab.slice('user:'.length);
+          const user = state.users.find(u => u.id === userId);
+          if (!user) return null;
+          return (
+            <UserPanel
+              user={user}
+              users={state.users}
+              tasks={state.tasks}
+              taskRows={state.taskRows}
+              completions={state.completions}
+              customSchedule={state.customSchedule}
+              rewards={state.rewards}
+              history={state.history}
+              pendingApprovals={state.pendingApprovals}
+              hass={hass}
+              onAddRow={addTaskRow}
+              onUpdateRow={updateTaskRowPerson}
+              onRemoveRow={removeTaskRow}
+              onToggleCompletion={toggleCompletion}
+              onToggleWeeklyPattern={toggleWeeklyPattern}
+              onToggleCustomSchedule={toggleCustomSchedule}
+              onUpdateTaskPoints={updateTaskPoints}
+              onUpdateTaskName={updateTaskName}
+              onRemoveTask={removeTask}
+              onAddTask={addTask}
+              onReset={resetData}
+              onAssign={assignUserToTask}
+              pointActions={pointActions}
+            />
+          );
+        })()}
 
         {/* WIDOK 3: GŁÓWNY PANEL ZARZĄDZANIA SPA */}
         {activeTab === 'admin' && (

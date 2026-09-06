@@ -11,6 +11,10 @@ interface ScheduleProps {
   completions: Completions;
   customSchedule: Record<string, boolean>;
   isWeeklyPattern?: boolean;
+  /** Gdy podane, pokazuje tylko wiersze przypisane do tego użytkownika (i tylko
+   *  zadania, w których w ogóle występuje) - używane przez panel osobisty. */
+  personId?: string;
+  personName?: string;
   onAddRow: (taskId: string) => void;
   onUpdateRow: (taskId: string, rowId: string, person: Person) => void;
   onRemoveRow: (taskId: string, rowId: string) => void;
@@ -32,6 +36,8 @@ export const Schedule: React.FC<ScheduleProps> = ({
   completions,
   customSchedule,
   isWeeklyPattern,
+  personId,
+  personName,
   onAddRow,
   onUpdateRow,
   onRemoveRow,
@@ -150,7 +156,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
         <div className="flex items-center gap-3">
           <Calendar className="w-6 h-6 text-emerald-600" />
           <h2 className="text-lg font-semibold text-slate-800">
-            Harmonogram ({viewMode === 'week' ? 'Tygodniowy' : 'Miesięczny'})
+            Harmonogram ({viewMode === 'week' ? 'Tygodniowy' : 'Miesięczny'}){personName ? ` — ${personName}` : ''}
           </h2>
         </div>
         <div className="flex items-center gap-2">
@@ -160,7 +166,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
           >
             <Download className="w-4 h-4" /> Eksport XLS
           </button>
-          {viewMode === 'week' && (
+          {viewMode === 'week' && !personId && (
             <button
               onClick={onReset}
               className="inline-flex items-center gap-2 px-3 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500"
@@ -191,8 +197,17 @@ export const Schedule: React.FC<ScheduleProps> = ({
             </tr>
           </thead>
           <tbody className="bg-white">
+            {personId && !tasks.some(t => (taskRows[t.id] || []).some(r => r.person === personId)) && (
+              <tr>
+                <td colSpan={3 + daysArray.length} className="px-6 py-8 text-center text-sm text-slate-400 italic">
+                  Brak przypisanych zadań. Przypisz zadanie w sekcji poniżej.
+                </td>
+              </tr>
+            )}
             {tasks.map((task, taskIndex) => {
-              const rows = taskRows[task.id] || [];
+              const allRows = taskRows[task.id] || [];
+              const rows = personId ? allRows.filter(r => r.person === personId) : allRows;
+              if (personId && rows.length === 0) return null;
               const isCustom = viewMode === 'week' && !!customSchedule[task.id];
               // Tło naprzemienne per-zadanie (nie per-wiersz) - pomaga odróżnić grupy
               // wierszy należące do różnych zadań. Pełna krycie (bez alfa), bo jedna
@@ -265,13 +280,15 @@ export const Schedule: React.FC<ScheduleProps> = ({
                                 </div>
                               )}
                             </div>
-                            <button 
-                              onClick={() => onAddRow(task.id)}
-                              className={`p-1 rounded-full text-emerald-600 hover:bg-emerald-100 flex-shrink-0 transition-colors ${isCustom ? 'opacity-50' : ''}`}
-                              title="Dodaj osobę do zadania"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
+                            {!personId && (
+                              <button
+                                onClick={() => onAddRow(task.id)}
+                                className={`p-1 rounded-full text-emerald-600 hover:bg-emerald-100 flex-shrink-0 transition-colors ${isCustom ? 'opacity-50' : ''}`}
+                                title="Dodaj osobę do zadania"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
 
                           {viewMode === 'week' && (

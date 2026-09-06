@@ -13,6 +13,15 @@ export interface User {
   personEntityId?: string;
 }
 
+export interface PendingApproval {
+  id: string;
+  /** entity_id sensora punktów użytkownika */
+  user: string;
+  task_id: string;
+  task_name: string;
+  points: number;
+}
+
 export interface HistoryEntry {
   id: string;
   timestamp: string;

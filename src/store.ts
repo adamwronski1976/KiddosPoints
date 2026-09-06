@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TaskRow, Completions, Person, Task, Reward, User, HistoryEntry } from './types';
+import { TaskRow, Completions, Person, Task, Reward, User, HistoryEntry, PendingApproval } from './types';
 import { TASKS, REWARDS } from './data';
 
 interface AppState {
@@ -14,6 +14,8 @@ interface AppState {
    *  backend HA (useHaConfigStore). Obecna tu wyłącznie po to, by komponenty
    *  mogły czytać state.history niezależnie od tego, który store jest aktywny. */
   history: HistoryEntry[];
+  /** Zawsze pusta lokalnie — kolejka akceptacji żyje tylko po stronie HA. */
+  pendingApprovals: PendingApproval[];
 }
 
 const DEFAULT_USERS: User[] = [
@@ -34,7 +36,8 @@ const DEFAULT_STATE: AppState = {
   completions: {},
   computerSlots: {},
   customSchedule: {},
-  history: []
+  history: [],
+  pendingApprovals: []
 };
 
 export function useAppStore() {
@@ -210,6 +213,27 @@ export function useAppStore() {
     }));
   };
 
+  const assignUserToTask = (taskId: string, userId: string) => {
+    setState(prev => {
+      const rows = prev.taskRows[taskId] || [];
+      const emptyRow = rows.find(r => !r.person);
+      const newRows = emptyRow
+        ? rows.map(r => (r.id === emptyRow.id ? { ...r, person: userId } : r))
+        : [...rows, { id: `${taskId}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, person: userId }];
+      return { ...prev, taskRows: { ...prev.taskRows, [taskId]: newRows } };
+    });
+  };
+
+  const unassignUserFromTask = (taskId: string, userId: string) => {
+    setState(prev => {
+      const rows = prev.taskRows[taskId] || [];
+      const newRows = rows.length <= 1
+        ? rows.map(r => (r.person === userId ? { ...r, person: '' } : r))
+        : rows.filter(r => r.person !== userId);
+      return { ...prev, taskRows: { ...prev.taskRows, [taskId]: newRows } };
+    });
+  };
+
   const importData = (importedState: Partial<AppState>) => {
     if (!importedState || typeof importedState !== 'object') return false;
     
@@ -284,6 +308,8 @@ export function useAppStore() {
     removeTask,
     updateComputerSlot,
     toggleCustomSchedule,
+    assignUserToTask,
+    unassignUserFromTask,
     importData,
     resetData
   };

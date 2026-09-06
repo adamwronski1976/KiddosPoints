@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import { TaskRow, Completions, Person, User, HistoryEntry } from './types';
+import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval } from './types';
 
 const CONFIG_ENTITY = 'sensor.chore_manager_config';
 const HISTORY_ENTITY = 'sensor.chore_manager_history';
+const PENDING_ENTITY = 'sensor.chore_manager_pending_approvals';
 
 export interface HomeAssistantLike {
   states: Record<string, { state: string; attributes: Record<string, any> }>;
@@ -18,6 +19,7 @@ interface HaAppState {
   computerSlots: Record<string, number>;
   customSchedule: Record<string, boolean>;
   history: HistoryEntry[];
+  pendingApprovals: PendingApproval[];
 }
 
 const EMPTY_STATE: HaAppState = {
@@ -29,6 +31,7 @@ const EMPTY_STATE: HaAppState = {
   computerSlots: {},
   customSchedule: {},
   history: [],
+  pendingApprovals: [],
 };
 
 /**
@@ -42,6 +45,7 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
   const state: HaAppState = useMemo(() => {
     const attrs = hass.states[CONFIG_ENTITY]?.attributes;
     const historyItems = hass.states[HISTORY_ENTITY]?.attributes?.items;
+    const pendingItems = hass.states[PENDING_ENTITY]?.attributes?.items;
     if (!attrs) return EMPTY_STATE;
     return {
       users: attrs.users || [],
@@ -52,8 +56,9 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
       computerSlots: attrs.computerSlots || {},
       customSchedule: attrs.customSchedule || {},
       history: historyItems || [],
+      pendingApprovals: pendingItems || [],
     };
-  }, [hass.states[CONFIG_ENTITY], hass.states[HISTORY_ENTITY]]);
+  }, [hass.states[CONFIG_ENTITY], hass.states[HISTORY_ENTITY], hass.states[PENDING_ENTITY]]);
 
   const patch = (partial: Record<string, any>) => {
     hass.callService('chore_manager', 'update_config', { patch: partial });
@@ -150,6 +155,23 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     patch({ computerSlots: { ...state.computerSlots, [`${person}_${day}`]: slots } });
   };
 
+  const assignUserToTask = (taskId: string, userId: string) => {
+    const rows = state.taskRows[taskId] || [];
+    const emptyRow = rows.find(r => !r.person);
+    const newRows = emptyRow
+      ? rows.map(r => (r.id === emptyRow.id ? { ...r, person: userId } : r))
+      : [...rows, { id: `${taskId}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, person: userId }];
+    patch({ taskRows: { ...state.taskRows, [taskId]: newRows } });
+  };
+
+  const unassignUserFromTask = (taskId: string, userId: string) => {
+    const rows = state.taskRows[taskId] || [];
+    const newRows = rows.length <= 1
+      ? rows.map(r => (r.person === userId ? { ...r, person: '' } : r))
+      : rows.filter(r => r.person !== userId);
+    patch({ taskRows: { ...state.taskRows, [taskId]: newRows } });
+  };
+
   const toggleCustomSchedule = (taskId: string) => {
     patch({ customSchedule: { ...state.customSchedule, [taskId]: !state.customSchedule[taskId] } });
   };
@@ -204,6 +226,33 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     patch({ users: state.users.filter(u => u.id !== id), taskRows: newTaskRows });
   };
 
+  // Akcje punktowe wołające bezpośrednio prawdziwe usługi chore_manager
+  // (nie update_config) - to ten sam kontrakt, którego używa karta Lovelace.
+  const approveApproval = (approval: PendingApproval) => {
+    hass.callService('chore_manager', 'approve_task', {
+      user: approval.user,
+      task_id: approval.task_id,
+      points: approval.points,
+    });
+  };
+
+  const rejectApproval = (approval: PendingApproval, reason?: string) => {
+    hass.callService('chore_manager', 'reject_task', {
+      user: approval.user,
+      task_id: approval.task_id,
+      reason: reason || 'Niewykonane poprawnie',
+    });
+  };
+
+  const addPointsToUser = (haEntityId: string, points: number, reason?: string) => {
+    hass.callService('chore_manager', 'add_points', { user: haEntityId, points, reason });
+  };
+
+  const resetUserPoints = (haEntityId: string) => {
+    if (!confirm('Wyzerować punkty tego użytkownika?')) return;
+    hass.callService('chore_manager', 'reset_points', { user: haEntityId });
+  };
+
   return {
     state,
     addUser,
@@ -222,7 +271,13 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     removeTask,
     updateComputerSlot,
     toggleCustomSchedule,
+    assignUserToTask,
+    unassignUserFromTask,
     importData,
     resetData,
+    approveApproval,
+    rejectApproval,
+    addPointsToUser,
+    resetUserPoints,
   };
 }
