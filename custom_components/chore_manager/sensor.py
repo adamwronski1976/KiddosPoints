@@ -21,6 +21,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities = [ChorePointsSensor(hass, u) for u in users]
     entities.append(ChorePendingCountSensor())
     entities.append(ChoreConfigSensor())
+    entities.append(ChoreHistorySensor())
     async_add_entities(entities, update_before_add=True)
 
 
@@ -34,6 +35,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     entities = [ChorePointsSensor(hass, u) for u in users]
     entities.append(ChorePendingCountSensor())
     entities.append(ChoreConfigSensor())
+    entities.append(ChoreHistorySensor())
     async_add_entities(entities)
 
 
@@ -51,6 +53,9 @@ class ChorePointsSensor(SensorEntity):
         self._attr_unique_id = f"chore_points_{user_id}"
         self.entity_id = user.get("haEntityId") or f"sensor.chore_points_{user_id}"
         self._user_id = user_id
+        # Opcjonalne powiązanie z prawdziwą osobą HA (person.*) - do wyświetlania
+        # zdjęcia/imienia w panelu i ewentualnych automatyzacji opartych o obecność.
+        self._person_entity_id = user.get("personEntityId")
         # Odtworzenie ostatniej wartości punktów z magazynu integracji (przetrwanie restartu).
         stored_points = _stored_data(hass).get("points", {})
         self._state = stored_points.get(self.entity_id, 0)
@@ -75,6 +80,7 @@ class ChorePointsSensor(SensorEntity):
         level = (points // 100) + 1
         return {
             "user_id": self._user_id,
+            "person_entity_id": self._person_entity_id,
             "level": level,
             "rank": self._get_rank(level),
             "points_to_next_level": 100 - (points % 100),
@@ -146,8 +152,32 @@ class ChoreConfigSensor(SensorEntity):
             "rewards": data.get("rewards", []),
             "taskRows": data.get("taskRows", {}),
             "completions": data.get("completions", {}),
-            "customRewardCosts": data.get("customRewardCosts", {}),
-            "customTaskPoints": data.get("customTaskPoints", {}),
             "computerSlots": data.get("computerSlots", {}),
             "customSchedule": data.get("customSchedule", {}),
         }
+
+
+class ChoreHistorySensor(SensorEntity):
+    """Dziennik zmian punktów: kto, kiedy, ile i za co dostał/stracił."""
+
+    _attr_name = "KiddosPoints - Historia punktów"
+    _attr_unique_id = "chore_manager_history"
+    _attr_icon = "mdi:history"
+
+    def __init__(self):
+        self.entity_id = "sensor.chore_manager_history"
+
+    async def async_added_to_hass(self):
+        self.hass.data.setdefault(DOMAIN, {})["history_entity"] = self
+
+    @property
+    def native_value(self):
+        data = _stored_data(self.hass) if self.hass else {}
+        return len(data.get("history", []))
+
+    @property
+    def extra_state_attributes(self):
+        data = _stored_data(self.hass) if self.hass else {}
+        # Najnowsze first - wygodniejsze do wyświetlenia w panelu bez sortowania.
+        items = list(reversed(data.get("history", [])))
+        return {"items": items}

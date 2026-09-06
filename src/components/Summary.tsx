@@ -6,18 +6,17 @@ interface SummaryProps {
   tasks: Task[];
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
-  customTaskPoints: Record<string, number>;
   users: User[];
 }
 
-export const Summary: React.FC<SummaryProps> = ({ tasks, taskRows, completions, customTaskPoints, users }) => {
+export const Summary: React.FC<SummaryProps> = ({ tasks, taskRows, completions, users }) => {
   const getPersonData = (user: User) => {
     const personTasks: Task[] = [];
     let earned = 0;
-    
+
     tasks.forEach(task => {
       const rows = taskRows[task.id] || [];
-      const pointsVal = customTaskPoints[task.id] !== undefined ? customTaskPoints[task.id] : task.points;
+      const pointsVal = task.points;
       let isApplicableToPerson = false;
 
       rows.forEach(row => {

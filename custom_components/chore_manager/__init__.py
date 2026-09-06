@@ -5,6 +5,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 from .const import (
     DOMAIN,
     STORAGE_KEY,
@@ -26,6 +27,10 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor", "todo"]
 
+# Ile ostatnich wpisów historii punktów trzymamy (starsze są odrzucane, żeby
+# magazyn nie rósł w nieskończoność).
+HISTORY_LIMIT = 200
+
 # Stan startowy magazynu przy pierwszym uruchomieniu integracji: żadnych
 # zahardkodowanych domowników — tylko jedno konto administratora "Gadget".
 DEFAULT_DATA = {
@@ -44,8 +49,6 @@ DEFAULT_DATA = {
     "rewards": [],
     "taskRows": {},
     "completions": {},
-    "customRewardCosts": {},
-    "customTaskPoints": {},
     "computerSlots": {},
     "customSchedule": {},
     "pending_approvals": [],
@@ -60,8 +63,6 @@ _PATCHABLE_KEYS = [
     "rewards",
     "taskRows",
     "completions",
-    "customRewardCosts",
-    "customTaskPoints",
     "computerSlots",
     "customSchedule",
 ]
@@ -82,6 +83,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not data:
         data = {**DEFAULT_DATA}
         await store.async_save(data)
+    else:
+        # Migracja starszych magazynów: usuń nieużywaną już warstwę nadpisań
+        # punktów zadań/nagród (uproszczone do jednego pola `points`).
+        data.pop("customTaskPoints", None)
+        data.pop("customRewardCosts", None)
+        data.setdefault("history", [])
 
     hass.data[DOMAIN]["store"] = store
     hass.data[DOMAIN]["data"] = data
@@ -142,7 +149,7 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             return
 
         # Przyznanie punktów bezpośrednio
-        await _add_points_to_entity(hass, user_entity_id, points)
+        await _add_points_to_entity(hass, user_entity_id, points, reason=f"Zadanie: {task_name}")
         hass.bus.async_fire(EVENT_TASK_COMPLETED, {
             "user": user_entity_id,
             "task_id": task_id,
@@ -166,7 +173,8 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             await _persist(hass)
             _refresh_pending_sensor(hass)
 
-        await _add_points_to_entity(hass, user_entity_id, points)
+        task_name = _task_name(hass, task_id) or task_id
+        await _add_points_to_entity(hass, user_entity_id, points, reason=f"Zatwierdzono: {task_name}")
         hass.bus.async_fire(EVENT_TASK_APPROVED, {
             "user": user_entity_id,
             "task_id": task_id,
@@ -217,7 +225,7 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             _LOGGER.warning("Użytkownik %s nie ma wystarczająco punktów (%s < %s)", user_entity_id, current_points, cost)
             return
 
-        await _add_points_to_entity(hass, user_entity_id, -cost)
+        await _add_points_to_entity(hass, user_entity_id, -cost, reason=f"Nagroda: {reward_name}")
 
         hass.bus.async_fire(EVENT_REWARD_CLAIMED, {
             "user": user_entity_id,
@@ -232,14 +240,15 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         """Ręczne dodanie lub odjęcie punktów."""
         user_entity_id = call.data.get("user")
         points = call.data.get("points", 0)
-        await _add_points_to_entity(hass, user_entity_id, points)
+        reason = call.data.get("reason") or "Ręczna korekta"
+        await _add_points_to_entity(hass, user_entity_id, points, reason=reason)
 
     async def handle_reset_points(call: ServiceCall):
         """Zresetowanie punktów danego użytkownika do zera."""
         user_entity_id = call.data.get("user")
         user_state = hass.states.get(user_entity_id)
         if user_state:
-            await _set_points_for_entity(hass, user_entity_id, 0)
+            await _set_points_for_entity(hass, user_entity_id, 0, reason="Reset punktów")
 
     async def handle_update_config(call: ServiceCall):
         """Scala fragment (patch) konfiguracji panelu administracyjnego z magazynem."""
@@ -278,6 +287,14 @@ async def _persist(hass: HomeAssistant) -> None:
         await domain_data["store"].async_save(domain_data["data"])
 
 
+def _task_name(hass: HomeAssistant, task_id: str) -> str | None:
+    data = hass.data.get(DOMAIN, {}).get("data", {})
+    for task in data.get("tasks", []):
+        if task.get("id") == task_id:
+            return task.get("name")
+    return None
+
+
 def _refresh_pending_sensor(hass: HomeAssistant) -> None:
     entity = hass.data.get(DOMAIN, {}).get("pending_entity")
     if entity is not None:
@@ -294,6 +311,34 @@ def _refresh_todo_entity(hass: HomeAssistant) -> None:
     entity = hass.data.get(DOMAIN, {}).get("todo_entity")
     if entity is not None:
         entity.async_write_ha_state()
+
+
+def _refresh_history_sensor(hass: HomeAssistant) -> None:
+    entity = hass.data.get(DOMAIN, {}).get("history_entity")
+    if entity is not None:
+        entity.async_write_ha_state()
+
+
+async def _log_history(hass: HomeAssistant, user_entity_id: str, delta: int, new_total: int, reason: str) -> None:
+    """Dopisuje wpis do dziennika zmian punktów (kto/kiedy/za co/ile)."""
+    domain_data = hass.data.get(DOMAIN, {})
+    if "data" not in domain_data:
+        return
+    data = domain_data["data"]
+    entry = {
+        "id": f"h_{int(time.time() * 1000)}",
+        "timestamp": dt_util.utcnow().isoformat(),
+        "user": user_entity_id,
+        "delta": delta,
+        "new_total": new_total,
+        "reason": reason,
+    }
+    history = data.setdefault("history", [])
+    history.append(entry)
+    if len(history) > HISTORY_LIMIT:
+        del history[: len(history) - HISTORY_LIMIT]
+    await _persist(hass)
+    _refresh_history_sensor(hass)
 
 
 async def _sync_users(hass: HomeAssistant, users: list) -> None:
@@ -314,15 +359,21 @@ async def _sync_users(hass: HomeAssistant, users: list) -> None:
         add_entities(new_entities, update_before_add=True)
 
 
-async def _set_points_for_entity(hass: HomeAssistant, user_entity_id: str, points: int) -> None:
-    """Ustawia dokładną wartość punktów danej encji, z zapisem do magazynu."""
+async def _set_points_for_entity(hass: HomeAssistant, user_entity_id: str, points: int, reason: str = "") -> None:
+    """Ustawia dokładną wartość punktów danej encji, z zapisem do magazynu i historii."""
     points = max(0, points)
     points_entities = hass.data.get(DOMAIN, {}).get("points_entities", {})
     entity = points_entities.get(user_entity_id)
+
     if entity is not None:
+        current_points = entity.native_value or 0
         entity.set_points(points)
     else:
         user_state = hass.states.get(user_entity_id)
+        try:
+            current_points = int(user_state.state) if user_state else 0
+        except ValueError:
+            current_points = 0
         attrs = dict(user_state.attributes) if user_state else {
             "icon": "mdi:star-circle",
             "friendly_name": user_entity_id.replace("sensor.chore_points_", "").capitalize(),
@@ -334,9 +385,12 @@ async def _set_points_for_entity(hass: HomeAssistant, user_entity_id: str, point
         domain_data["data"].setdefault("points", {})[user_entity_id] = points
         await _persist(hass)
 
+    if reason:
+        await _log_history(hass, user_entity_id, points - current_points, points, reason)
 
-async def _add_points_to_entity(hass: HomeAssistant, user_entity_id: str, points: int) -> None:
-    """Pomocnicza funkcja do modyfikacji stanu punktów sensora (z trwałym zapisem)."""
+
+async def _add_points_to_entity(hass: HomeAssistant, user_entity_id: str, points: int, reason: str = "") -> None:
+    """Pomocnicza funkcja do modyfikacji stanu punktów sensora (z trwałym zapisem i historią)."""
     points_entities = hass.data.get(DOMAIN, {}).get("points_entities", {})
     entity = points_entities.get(user_entity_id)
     if entity is not None:
@@ -349,4 +403,4 @@ async def _add_points_to_entity(hass: HomeAssistant, user_entity_id: str, points
             current_points = 0
 
     new_points = max(0, current_points + points)
-    await _set_points_for_entity(hass, user_entity_id, new_points)
+    await _set_points_for_entity(hass, user_entity_id, new_points, reason=reason)

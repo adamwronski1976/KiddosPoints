@@ -4,12 +4,11 @@ import { Gift, Plus } from 'lucide-react';
 
 interface RewardsProps {
   rewards: Reward[];
-  customCosts: Record<string, number>;
   onUpdateCost: (rewardId: string, cost: number) => void;
   onAddReward: (name: string, points: number) => void;
 }
 
-export const Rewards: React.FC<RewardsProps> = ({ rewards, customCosts, onUpdateCost, onAddReward }) => {
+export const Rewards: React.FC<RewardsProps> = ({ rewards, onUpdateCost, onAddReward }) => {
   const [newName, setNewName] = useState("");
   const [newPoints, setNewPoints] = useState(10);
 
@@ -41,8 +40,8 @@ export const Rewards: React.FC<RewardsProps> = ({ rewards, customCosts, onUpdate
           </thead>
           <tbody className="bg-white divide-y divide-slate-200">
             {rewards.map(reward => {
-              const displayCost = customCosts[reward.id] !== undefined ? customCosts[reward.id] : reward.points;
-              
+              const displayCost = reward.points;
+
               return (
                 <tr key={reward.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-6 py-3 whitespace-normal text-sm font-medium text-slate-900">

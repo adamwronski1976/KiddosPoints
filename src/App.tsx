@@ -6,6 +6,7 @@ import { Schedule } from './components/Schedule';
 import { Rewards } from './components/Rewards';
 import { ComputerTime } from './components/ComputerTime';
 import { UserManagement } from './components/UserManagement';
+import { HistoryLog } from './components/HistoryLog';
 import { DownloadCloud, UploadCloud, LayoutDashboard, Settings, Github, Copy, CheckCircle2, ShieldCheck, Terminal } from 'lucide-react';
 import './chore-manager-card';
 
@@ -78,19 +79,18 @@ export default function App({ hass }: AppProps) {
           if (row.person === u.id || row.person === u.name) {
             for (let day = 1; day <= 31; day++) {
               if (state.completions[`${row.id}_${day}`]) {
-                const pts = state.customTaskPoints[task.id] !== undefined ? state.customTaskPoints[task.id] : task.points;
-                earned += pts;
+                earned += task.points;
               }
             }
           }
         });
       });
-      map[u.haEntityId || `sensor.chore_points_${u.id}`] = (userPointsOverride[u.id] !== undefined) 
-        ? userPointsOverride[u.id] 
+      map[u.haEntityId || `sensor.chore_points_${u.id}`] = (userPointsOverride[u.id] !== undefined)
+        ? userPointsOverride[u.id]
         : earned;
     });
     return map;
-  }, [state.users, state.tasks, state.taskRows, state.completions, state.customTaskPoints, userPointsOverride]);
+  }, [state.users, state.tasks, state.taskRows, state.completions, userPointsOverride]);
 
   // Przygotowanie mocka Home Assistant (hass)
   const hassMock = useMemo(() => {
@@ -117,13 +117,12 @@ export default function App({ hass }: AppProps) {
     const tasksForCard: any[] = [];
     state.tasks.forEach(task => {
       const rows = state.taskRows[task.id] || [];
-      const pts = state.customTaskPoints[task.id] !== undefined ? state.customTaskPoints[task.id] : task.points;
       rows.forEach(row => {
         const assignedUser = state.users.find(u => u.id === row.person || u.name === row.person);
         tasksForCard.push({
           id: `${task.id}_${row.id}`,
           name: task.name,
-          points: pts,
+          points: task.points,
           assigned_to: assignedUser ? assignedUser.name : (row.person || 'Wszyscy')
         });
       });
@@ -143,7 +142,7 @@ export default function App({ hass }: AppProps) {
         rewards: state.rewards.map(r => ({
           ...r,
           title: r.name,
-          cost: state.customRewardCosts[r.id] !== undefined ? state.customRewardCosts[r.id] : r.points
+          cost: r.points
         }))
       }
     };
@@ -497,33 +496,32 @@ action:
             </div>
 
             <section className="w-full">
-              <UserManagement 
-                users={state.users} 
-                onAddUser={addUser} 
-                onUpdateUser={updateUser} 
-                onRemoveUser={removeUser} 
+              <UserManagement
+                users={state.users}
+                hass={hass}
+                onAddUser={addUser}
+                onUpdateUser={updateUser}
+                onRemoveUser={removeUser}
               />
             </section>
 
             <section className="w-full">
-              <Summary 
-                users={state.users} 
-                tasks={state.tasks} 
-                taskRows={state.taskRows} 
-                completions={state.completions} 
-                customTaskPoints={state.customTaskPoints} 
+              <Summary
+                users={state.users}
+                tasks={state.tasks}
+                taskRows={state.taskRows}
+                completions={state.completions}
               />
             </section>
 
             <section className="w-full">
-              <Schedule 
-                users={state.users} 
-                viewMode="week" 
-                tasks={state.tasks} 
-                taskRows={state.taskRows} 
-                completions={state.completions} 
-                customTaskPoints={state.customTaskPoints} 
-                customSchedule={state.customSchedule} 
+              <Schedule
+                users={state.users}
+                viewMode="week"
+                tasks={state.tasks}
+                taskRows={state.taskRows}
+                completions={state.completions}
+                customSchedule={state.customSchedule}
                 isWeeklyPattern={true} 
                 onAddRow={addTaskRow} 
                 onUpdateRow={updateTaskRowPerson} 
@@ -540,14 +538,13 @@ action:
             </section>
 
             <section className="w-full">
-              <Schedule 
-                users={state.users} 
-                viewMode="month" 
-                tasks={state.tasks} 
-                taskRows={state.taskRows} 
-                completions={state.completions} 
-                customTaskPoints={state.customTaskPoints} 
-                customSchedule={state.customSchedule} 
+              <Schedule
+                users={state.users}
+                viewMode="month"
+                tasks={state.tasks}
+                taskRows={state.taskRows}
+                completions={state.completions}
+                customSchedule={state.customSchedule}
                 onAddRow={addTaskRow} 
                 onUpdateRow={updateTaskRowPerson} 
                 onRemoveRow={removeTaskRow} 
@@ -569,13 +566,16 @@ action:
               />
             </section>
 
-            <section className="w-full pb-12">
-              <Rewards 
-                rewards={state.rewards} 
-                customCosts={state.customRewardCosts} 
-                onUpdateCost={updateRewardCost} 
-                onAddReward={addReward} 
+            <section className="w-full">
+              <Rewards
+                rewards={state.rewards}
+                onUpdateCost={updateRewardCost}
+                onAddReward={addReward}
               />
+            </section>
+
+            <section className="w-full pb-12">
+              <HistoryLog history={state.history} users={state.users} />
             </section>
           </div>
         )}

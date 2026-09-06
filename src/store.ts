@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TaskRow, Completions, Person, Task, Reward, User } from './types';
+import { TaskRow, Completions, Person, Task, Reward, User, HistoryEntry } from './types';
 import { TASKS, REWARDS } from './data';
 
 interface AppState {
@@ -8,10 +8,12 @@ interface AppState {
   rewards: Reward[];
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
-  customRewardCosts: Record<string, number>;
-  customTaskPoints: Record<string, number>;
   computerSlots: Record<string, number>;
   customSchedule: Record<string, boolean>;
+  /** Zawsze pusta w trybie lokalnym — dziennik zmian punktów prowadzi tylko
+   *  backend HA (useHaConfigStore). Obecna tu wyłącznie po to, by komponenty
+   *  mogły czytać state.history niezależnie od tego, który store jest aktywny. */
+  history: HistoryEntry[];
 }
 
 const DEFAULT_USERS: User[] = [
@@ -30,10 +32,9 @@ const DEFAULT_STATE: AppState = {
     return acc;
   }, {} as Record<string, TaskRow[]>),
   completions: {},
-  customRewardCosts: {},
-  customTaskPoints: {},
   computerSlots: {},
-  customSchedule: {}
+  customSchedule: {},
+  history: []
 };
 
 export function useAppStore() {
@@ -50,10 +51,9 @@ export function useAppStore() {
           rewards: parsed.rewards || DEFAULT_STATE.rewards,
           taskRows: parsed.taskRows || DEFAULT_STATE.taskRows,
           completions: parsed.completions || DEFAULT_STATE.completions,
-          customRewardCosts: parsed.customRewardCosts || DEFAULT_STATE.customRewardCosts,
-          customTaskPoints: parsed.customTaskPoints || DEFAULT_STATE.customTaskPoints,
           computerSlots: parsed.computerSlots || DEFAULT_STATE.computerSlots,
-          customSchedule: parsed.customSchedule || DEFAULT_STATE.customSchedule
+          customSchedule: parsed.customSchedule || DEFAULT_STATE.customSchedule,
+          history: DEFAULT_STATE.history
         };
       } catch (e) {
         console.error('Failed to parse saved state', e);
@@ -157,20 +157,14 @@ export function useAppStore() {
   const updateRewardCost = (rewardId: string, cost: number) => {
     setState(prev => ({
       ...prev,
-      customRewardCosts: {
-        ...prev.customRewardCosts,
-        [rewardId]: cost
-      }
+      rewards: prev.rewards.map(r => (r.id === rewardId ? { ...r, points: cost } : r))
     }));
   };
 
   const updateTaskPoints = (taskId: string, points: number) => {
     setState(prev => ({
       ...prev,
-      customTaskPoints: {
-        ...prev.customTaskPoints,
-        [taskId]: points
-      }
+      tasks: prev.tasks.map(t => (t.id === taskId ? { ...t, points } : t))
     }));
   };
 
@@ -226,8 +220,6 @@ export function useAppStore() {
       rewards: (importedState.rewards && Array.isArray(importedState.rewards) && importedState.rewards.length > 0) ? importedState.rewards : prev.rewards,
       taskRows: importedState.taskRows || prev.taskRows,
       completions: importedState.completions || prev.completions,
-      customRewardCosts: importedState.customRewardCosts || prev.customRewardCosts,
-      customTaskPoints: importedState.customTaskPoints || prev.customTaskPoints,
       computerSlots: importedState.computerSlots || prev.computerSlots,
       customSchedule: importedState.customSchedule || prev.customSchedule
     }));
@@ -260,10 +252,17 @@ export function useAppStore() {
       return;
     }
     if (confirm('Czy na pewno chcesz usunąć tego użytkownika? Jego dane mogą pozostać w historii.')) {
-      setState(prev => ({
-        ...prev,
-        users: prev.users.filter(u => u.id !== id)
-      }));
+      setState(prev => {
+        const newTaskRows: Record<string, TaskRow[]> = {};
+        for (const [taskId, rows] of Object.entries(prev.taskRows)) {
+          newTaskRows[taskId] = rows.map(r => (r.person === id ? { ...r, person: '' } : r));
+        }
+        return {
+          ...prev,
+          users: prev.users.filter(u => u.id !== id),
+          taskRows: newTaskRows
+        };
+      });
     }
   };
 

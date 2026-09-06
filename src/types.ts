@@ -7,6 +7,20 @@ export interface User {
   notifyOnNewTask: boolean;
   notifyOnReward: boolean;
   pinCode?: string;
+  /** Opcjonalne powiązanie z prawdziwą osobą Home Assistant (np. "person.adam"),
+   *  używane do pokazania jej zdjęcia/imienia. Etykiety grupowe (Rodzice,
+   *  Dzieci, Wszyscy) nie mają odpowiednika i zostawiają to pole puste. */
+  personEntityId?: string;
+}
+
+export interface HistoryEntry {
+  id: string;
+  timestamp: string;
+  /** entity_id sensora punktów użytkownika, np. sensor.chore_points_adam */
+  user: string;
+  delta: number;
+  new_total: number;
+  reason: string;
 }
 
 export type Person = string;

@@ -156,6 +156,13 @@ add_points:
         number:
           min: -1000
           max: 1000
+    reason:
+      name: Powód
+      description: Opis zapisywany w historii zmian punktów.
+      required: false
+      example: Bonus za pomoc w kuchni
+      selector:
+        text:
 
 reset_points:
   name: Zresetuj punkty do zera

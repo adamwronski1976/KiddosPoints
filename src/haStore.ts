@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { TaskRow, Completions, Person, User } from './types';
+import { TaskRow, Completions, Person, User, HistoryEntry } from './types';
 
 const CONFIG_ENTITY = 'sensor.chore_manager_config';
+const HISTORY_ENTITY = 'sensor.chore_manager_history';
 
 export interface HomeAssistantLike {
   states: Record<string, { state: string; attributes: Record<string, any> }>;
@@ -14,10 +15,9 @@ interface HaAppState {
   rewards: { id: string; name: string; points: number }[];
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
-  customRewardCosts: Record<string, number>;
-  customTaskPoints: Record<string, number>;
   computerSlots: Record<string, number>;
   customSchedule: Record<string, boolean>;
+  history: HistoryEntry[];
 }
 
 const EMPTY_STATE: HaAppState = {
@@ -26,21 +26,22 @@ const EMPTY_STATE: HaAppState = {
   rewards: [],
   taskRows: {},
   completions: {},
-  customRewardCosts: {},
-  customTaskPoints: {},
   computerSlots: {},
   customSchedule: {},
+  history: [],
 };
 
 /**
  * Odpowiednik useAppStore, ale zamiast localStorage czyta/pisze konfigurację
  * do prawdziwego Home Assistant: stan pochodzi z atrybutów encji
- * sensor.chore_manager_config, a mutacje wołają usługę
- * chore_manager.update_config, więc są widoczne od razu na każdym urządzeniu.
+ * sensor.chore_manager_config (+ sensor.chore_manager_history dla dziennika
+ * punktów), a mutacje wołają usługę chore_manager.update_config, więc są
+ * widoczne od razu na każdym urządzeniu.
  */
 export function useHaConfigStore(hass: HomeAssistantLike) {
   const state: HaAppState = useMemo(() => {
     const attrs = hass.states[CONFIG_ENTITY]?.attributes;
+    const historyItems = hass.states[HISTORY_ENTITY]?.attributes?.items;
     if (!attrs) return EMPTY_STATE;
     return {
       users: attrs.users || [],
@@ -48,12 +49,11 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
       rewards: attrs.rewards || [],
       taskRows: attrs.taskRows || {},
       completions: attrs.completions || {},
-      customRewardCosts: attrs.customRewardCosts || {},
-      customTaskPoints: attrs.customTaskPoints || {},
       computerSlots: attrs.computerSlots || {},
       customSchedule: attrs.customSchedule || {},
+      history: historyItems || [],
     };
-  }, [hass.states[CONFIG_ENTITY]]);
+  }, [hass.states[CONFIG_ENTITY], hass.states[HISTORY_ENTITY]]);
 
   const patch = (partial: Record<string, any>) => {
     hass.callService('chore_manager', 'update_config', { patch: partial });
@@ -128,11 +128,11 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
   };
 
   const updateRewardCost = (rewardId: string, cost: number) => {
-    patch({ customRewardCosts: { ...state.customRewardCosts, [rewardId]: cost } });
+    patch({ rewards: state.rewards.map(r => (r.id === rewardId ? { ...r, points: cost } : r)) });
   };
 
   const updateTaskPoints = (taskId: string, points: number) => {
-    patch({ customTaskPoints: { ...state.customTaskPoints, [taskId]: points } });
+    patch({ tasks: state.tasks.map(t => (t.id === taskId ? { ...t, points } : t)) });
   };
 
   const updateTaskName = (taskId: string, newName: string) => {
@@ -162,8 +162,6 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     if (Array.isArray(importedState.rewards) && importedState.rewards.length > 0) next.rewards = importedState.rewards;
     if (importedState.taskRows) next.taskRows = importedState.taskRows;
     if (importedState.completions) next.completions = importedState.completions;
-    if (importedState.customRewardCosts) next.customRewardCosts = importedState.customRewardCosts;
-    if (importedState.customTaskPoints) next.customTaskPoints = importedState.customTaskPoints;
     if (importedState.computerSlots) next.computerSlots = importedState.computerSlots;
     if (importedState.customSchedule) next.customSchedule = importedState.customSchedule;
     patch(next);
@@ -177,8 +175,6 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
       rewards: [],
       taskRows: {},
       completions: {},
-      customRewardCosts: {},
-      customTaskPoints: {},
       computerSlots: {},
       customSchedule: {},
     });
@@ -199,7 +195,13 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
       return;
     }
     if (!confirm('Czy na pewno chcesz usunąć tego użytkownika? Jego dane mogą pozostać w historii.')) return;
-    patch({ users: state.users.filter(u => u.id !== id) });
+    // Odepnij przypisania tego użytkownika w harmonogramie, żeby nie zostały
+    // "osierocone" wiersze wskazujące na nieistniejące już id.
+    const newTaskRows: Record<string, TaskRow[]> = {};
+    for (const [taskId, rows] of Object.entries(state.taskRows)) {
+      newTaskRows[taskId] = rows.map(r => (r.person === id ? { ...r, person: '' } : r));
+    }
+    patch({ users: state.users.filter(u => u.id !== id), taskRows: newTaskRows });
   };
 
   return {

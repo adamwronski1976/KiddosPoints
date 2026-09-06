@@ -9,7 +9,6 @@ interface ScheduleProps {
   tasks: Task[];
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
-  customTaskPoints: Record<string, number>;
   customSchedule: Record<string, boolean>;
   isWeeklyPattern?: boolean;
   onAddRow: (taskId: string) => void;
@@ -31,7 +30,6 @@ export const Schedule: React.FC<ScheduleProps> = ({
   tasks,
   taskRows,
   completions,
-  customTaskPoints,
   customSchedule,
   isWeeklyPattern,
   onAddRow,
@@ -81,7 +79,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
     
     tasks.forEach(task => {
       const taskRowsForTask = taskRows[task.id] || [];
-      const pointsVal = customTaskPoints[task.id] !== undefined ? customTaskPoints[task.id] : task.points;
+      const pointsVal = task.points;
       
       taskRowsForTask.forEach((row) => {
         const user = users.find(u => u.id === row.person);
@@ -335,7 +333,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                             type="number"
                             min="0"
                             className="w-14 mx-auto text-center border-slate-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm font-semibold text-slate-600 bg-slate-50/50"
-                            value={customTaskPoints[task.id] !== undefined ? customTaskPoints[task.id] : task.points}
+                            value={task.points}
                             onChange={(e) => {
                               const val = parseInt(e.target.value, 10);
                               if (!isNaN(val) && val >= 0) {
