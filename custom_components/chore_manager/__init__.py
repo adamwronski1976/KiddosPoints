@@ -399,6 +399,8 @@ def _refresh_todo_entities(hass: HomeAssistant) -> None:
         entity = domain_data.get(key)
         if entity is not None:
             entity.async_write_ha_state()
+    for entity in domain_data.get("todo_entities", {}).values():
+        entity.async_write_ha_state()
 
 
 def _refresh_overdue_sensor(hass: HomeAssistant) -> None:
@@ -559,21 +561,30 @@ async def _log_schedule_changes(
 
 
 async def _sync_users(hass: HomeAssistant, users: list) -> None:
-    """Tworzy realne, trwałe sensory punktów dla nowo dodanych użytkowników."""
+    """Tworzy realne, trwałe sensory punktów ORAZ osobistą listę todo
+    (todo.chore_tasks_<id>) dla nowo dodanych użytkowników."""
     add_entities = hass.data.get(DOMAIN, {}).get("sensor_add_entities")
     points_entities = hass.data.get(DOMAIN, {}).setdefault("points_entities", {})
+    todo_add_entities = hass.data.get(DOMAIN, {}).get("todo_add_entities")
+    todo_entities = hass.data.get(DOMAIN, {}).setdefault("todo_entities", {})
 
-    new_entities = []
+    new_sensor_entities = []
+    new_todo_entities = []
     for user in users:
         entity_id = user.get("haEntityId") or f"sensor.chore_points_{user['id']}"
         user.setdefault("haEntityId", entity_id)
         if entity_id not in points_entities and add_entities is not None:
             # Import lokalny, by uniknąć cyklu importów przy starcie integracji.
             from .sensor import ChorePointsSensor
-            new_entities.append(ChorePointsSensor(hass, user))
+            new_sensor_entities.append(ChorePointsSensor(hass, user))
+        if user["id"] not in todo_entities and todo_add_entities is not None:
+            from .todo import ChoreTodoListEntity
+            new_todo_entities.append(ChoreTodoListEntity(user))
 
-    if new_entities:
-        add_entities(new_entities, update_before_add=True)
+    if new_sensor_entities:
+        add_entities(new_sensor_entities, update_before_add=True)
+    if new_todo_entities:
+        todo_add_entities(new_todo_entities, update_before_add=True)
 
 
 async def _set_points_for_entity(hass: HomeAssistant, user_entity_id: str, points: int, reason: str = "") -> None:
@@ -791,20 +802,25 @@ async def _uncomplete_occurrence(hass: HomeAssistant, occ_id: str) -> None:
         _refresh_todo_entities(hass)
 
 
-async def _create_adhoc_occurrence(hass: HomeAssistant, summary: str) -> None:
+async def _create_adhoc_occurrence(hass: HomeAssistant, summary: str, person: str | None = None) -> None:
     """Dodanie doraźnej pozycji przez natywny UI todo (Assist itp.) - poza
-    systemem punktów, nie jest powiązana z żadnym zadaniem/osobą."""
+    systemem punktów. Jeśli dodana z osobistej listy danej osoby, zostaje na
+    niej przypisana; z listy zbiorczej ("todo.chore_tasks") widoczna jest
+    tylko tam."""
     data = hass.data.get(DOMAIN, {}).get("data")
     if data is None:
         return
     occ_id = f"occ_adhoc_{uuid.uuid4().hex[:8]}"
-    data.setdefault("occurrences", {})[occ_id] = {
+    occurrence = {
         "id": occ_id,
         "adhoc": True,
         "summary": summary,
         "status": "open",
         "created": dt_util.utcnow().isoformat(),
     }
+    if person:
+        occurrence["person"] = person
+    data.setdefault("occurrences", {})[occ_id] = occurrence
     await _persist(hass)
     _refresh_todo_entities(hass)
 

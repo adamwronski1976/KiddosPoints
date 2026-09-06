@@ -1,8 +1,13 @@
 """Natywne listy 'do zrobienia' Home Assistant, zsynchronizowane z Harmonogramem
-panelu KiddosPoints: 'todo.chore_tasks' (aktywne, terminowe wystąpienia) oraz
-'todo.chore_pending_approval' (czekające na akceptację rodzica). Pozycja NIGDY
-nie znika bezpowrotnie przy odhaczeniu/odrzuceniu - przenosi się między tymi
-dwoma listami (patrz _complete_occurrence/_reject_occurrence w __init__.py)."""
+panelu KiddosPoints:
+- 'todo.chore_tasks_<id>' - osobista, aktywna lista każdej osoby (tworzona
+  dynamicznie tak samo jak sensor punktów tej osoby),
+- 'todo.chore_tasks' - zbiorcza lista wszystkich (zachowana dla kompatybilności
+  wstecznej z kartą Lovelace, która czyta z niej cały katalog zadań),
+- 'todo.chore_pending_approval' - jedna wspólna kolejka do akceptacji przez
+  rodzica (rozbijanie jej per dziecko rozdrabniałoby jeden proces przeglądu).
+Pozycja NIGDY nie znika bezpowrotnie przy odhaczeniu/odrzuceniu - przenosi się
+między listami (patrz _complete_occurrence/_reject_occurrence w __init__.py)."""
 import uuid
 from datetime import date
 from homeassistant.components.todo import (
@@ -21,17 +26,26 @@ def _stored_data(hass: HomeAssistant) -> dict:
     return hass.data.get(DOMAIN, {}).get("data", {})
 
 
+def _find_user(hass: HomeAssistant, user_id: str) -> dict:
+    for user in _stored_data(hass).get("users", []):
+        if user.get("id") == user_id:
+            return user
+    return {}
+
+
 def _task_and_user(data: dict, occ: dict):
     task = next((t for t in data.get("tasks", []) if t.get("id") == occ.get("task_id")), None)
     user = next((u for u in data.get("users", []) if u.get("id") == occ.get("person")), None)
     return task, user
 
 
-def _occurrence_summary(data: dict, occ: dict) -> str:
+def _occurrence_summary(data: dict, occ: dict, include_person: bool) -> str:
     if occ.get("adhoc"):
         return occ.get("summary", "Zadanie")
     task, user = _task_and_user(data, occ)
     task_name = task.get("name") if task else occ.get("task_id")
+    if not include_person:
+        return task_name
     user_name = user.get("name") if user else occ.get("person")
     return f"{task_name} — {user_name}"
 
@@ -49,16 +63,20 @@ def _occurrence_description(data: dict, occ: dict) -> str | None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
-    async_add_entities([ChoreTodoListEntity(), ChorePendingApprovalTodoEntity()])
+    hass.data.setdefault(DOMAIN, {})["todo_add_entities"] = async_add_entities
+
+    entities = [ChoreTodoListEntity(None), ChorePendingApprovalTodoEntity()]
+    for user in _stored_data(hass).get("users", []):
+        entities.append(ChoreTodoListEntity(user))
+    async_add_entities(entities)
 
 
 class ChoreTodoListEntity(TodoListEntity):
-    """Aktywna lista wystąpień zadań (jedno na cykliczne przypisanie z Harmonogramu,
-    plus doraźne pozycje dodane wprost przez natywny UI/Assist)."""
+    """Lista wystąpień zadań. Bez `user` (person=None) to zbiorcza lista
+    wszystkich domowników (`todo.chore_tasks`, zachowana dla karty Lovelace);
+    z `user` to osobista lista danej osoby (`todo.chore_tasks_<id>`),
+    tworzona/usuwana dynamicznie razem z użytkownikiem."""
 
-    _attr_name = "Zadania domowe"
-    _attr_unique_id = "chore_manager_tasks"
-    _attr_icon = "mdi:checkbox-marked-outline"
     _attr_supported_features = (
         TodoListEntityFeature.CREATE_TODO_ITEM
         | TodoListEntityFeature.UPDATE_TODO_ITEM
@@ -66,11 +84,36 @@ class ChoreTodoListEntity(TodoListEntity):
         | TodoListEntityFeature.SET_DUE_DATE_ON_ITEM
     )
 
-    def __init__(self):
-        self.entity_id = "todo.chore_tasks"
+    def __init__(self, user: dict | None):
+        self._user_id = user.get("id") if user else None
+        self._initial_name = user.get("name") if user else None
+        if user:
+            self.entity_id = f"todo.chore_tasks_{self._user_id}"
+            self._attr_unique_id = f"chore_manager_tasks_{self._user_id}"
+            self._attr_icon = "mdi:checkbox-marked-outline"
+        else:
+            self.entity_id = "todo.chore_tasks"
+            self._attr_unique_id = "chore_manager_tasks"
+            self._attr_name = "Zadania domowe (wszyscy)"
+            self._attr_icon = "mdi:checkbox-multiple-marked-outline"
 
     async def async_added_to_hass(self):
-        self.hass.data.setdefault(DOMAIN, {})["todo_entity"] = self
+        domain_data = self.hass.data.setdefault(DOMAIN, {})
+        if self._user_id:
+            domain_data.setdefault("todo_entities", {})[self._user_id] = self
+        else:
+            domain_data["todo_entity"] = self
+
+    @property
+    def name(self):
+        """Dla listy osobistej nazwa czytana na żywo z magazynu, żeby zmiana
+        imienia w panelu była widoczna od razu (bez ponownego tworzenia encji)."""
+        if not self._user_id:
+            return self._attr_name
+        if not self.hass:
+            return f"Zadania — {self._initial_name}"
+        user = _find_user(self.hass, self._user_id)
+        return f"Zadania — {user.get('name', self._initial_name)}"
 
     @property
     def todo_items(self):
@@ -78,6 +121,8 @@ class ChoreTodoListEntity(TodoListEntity):
         items = []
         for occ_id, occ in data.get("occurrences", {}).items():
             if occ.get("status") not in ("open", "awaiting_award"):
+                continue
+            if self._user_id and occ.get("person") != self._user_id:
                 continue
             due = None
             if occ.get("due"):
@@ -87,7 +132,7 @@ class ChoreTodoListEntity(TodoListEntity):
                     due = None
             items.append(TodoItem(
                 uid=occ_id,
-                summary=_occurrence_summary(data, occ),
+                summary=_occurrence_summary(data, occ, include_person=self._user_id is None),
                 status=TodoItemStatus.COMPLETED if occ.get("status") == "awaiting_award" else TodoItemStatus.NEEDS_ACTION,
                 due=due,
                 description=_occurrence_description(data, occ),
@@ -96,8 +141,11 @@ class ChoreTodoListEntity(TodoListEntity):
 
     @property
     def extra_state_attributes(self):
-        """Zachowane dla kompatybilności z kartą Lovelace (chore-manager-card.js),
-        która czyta CAŁY katalog zadań z atrybutu (niezależnie od wystąpień)."""
+        """Zachowane WYŁĄCZNIE na liście zbiorczej dla kompatybilności z kartą
+        Lovelace (chore-manager-card.js), która czyta CAŁY katalog zadań
+        z atrybutu (niezależnie od wystąpień)."""
+        if self._user_id:
+            return {}
         data = _stored_data(self.hass) if self.hass else {}
         tasks = data.get("tasks", [])
         task_rows = data.get("taskRows", {})
@@ -120,7 +168,7 @@ class ChoreTodoListEntity(TodoListEntity):
         return {"tasks": items}
 
     async def async_create_todo_item(self, item: TodoItem) -> None:
-        await _create_adhoc_occurrence(self.hass, item.summary)
+        await _create_adhoc_occurrence(self.hass, item.summary, person=self._user_id)
 
     async def async_update_todo_item(self, item: TodoItem) -> None:
         data = _stored_data(self.hass)
@@ -156,9 +204,10 @@ class ChoreTodoListEntity(TodoListEntity):
 
 
 class ChorePendingApprovalTodoEntity(TodoListEntity):
-    """Lista wystąpień czekających na akceptację rodzica. Odhaczenie tutaj =
-    zatwierdzenie (nalicza punkty); usunięcie = odrzucenie (wraca na listę
-    aktywną, NIGDY nie znika)."""
+    """Jedna wspólna lista wystąpień czekających na akceptację rodzica -
+    kolejka przeglądu, celowo NIE rozbita per dziecko. Odhaczenie tutaj =
+    zatwierdzenie (nalicza punkty); usunięcie = odrzucenie (wraca na osobistą
+    listę aktywną tej osoby, NIGDY nie znika)."""
 
     _attr_name = "Do zatwierdzenia"
     _attr_unique_id = "chore_manager_pending_approval_todo"
@@ -182,7 +231,7 @@ class ChorePendingApprovalTodoEntity(TodoListEntity):
                 continue
             items.append(TodoItem(
                 uid=occ_id,
-                summary=_occurrence_summary(data, occ),
+                summary=_occurrence_summary(data, occ, include_person=True),
                 status=TodoItemStatus.NEEDS_ACTION,
                 description=_occurrence_description(data, occ),
             ))
