@@ -8,6 +8,13 @@ const PENDING_ENTITY = 'sensor.chore_manager_pending_approvals';
 export interface HomeAssistantLike {
   states: Record<string, { state: string; attributes: Record<string, any> }>;
   callService: (domain: string, service: string, data?: Record<string, any>) => void;
+  /** Usługi dostępne w HA (np. hass.services.notify.mobile_app_x) - używane do
+   *  wyboru kanału powiadomień. Prawdziwy obiekt hass to zawsze niesie; typ jest
+   *  opcjonalny tylko dlatego, że lokalny mock deweloperski tego nie udaje. */
+  services?: Record<string, Record<string, any>>;
+  /** Aktualnie zalogowany użytkownik HA - do ustalenia, czy wolno mu przełączać
+   *  widok na innego domownika (tylko administratorzy HA). */
+  user?: { id: string; name: string; is_admin: boolean };
 }
 
 interface HaAppState {

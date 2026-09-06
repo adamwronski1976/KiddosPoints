@@ -227,6 +227,10 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
 
         await _add_points_to_entity(hass, user_entity_id, -cost, reason=f"Nagroda: {reward_name}")
 
+        user = _find_user_by_entity(hass, user_entity_id)
+        if user and user.get("notifyOnReward"):
+            await _notify_user(hass, user, "Odebrano nagrodę", f"Odebrano nagrodę: {reward_name} (-{cost} pkt)")
+
         hass.bus.async_fire(EVENT_REWARD_CLAIMED, {
             "user": user_entity_id,
             "reward_id": reward_id,
@@ -272,13 +276,14 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             data["users"] = patch["users"]
             _refresh_all_points_sensors(hass)
 
-        id_to_entity = {u["id"]: u.get("haEntityId") for u in data.get("users", [])}
+        users_by_id = {u["id"]: u for u in data.get("users", [])}
+        id_to_entity = {uid: u.get("haEntityId") for uid, u in users_by_id.items()}
         tasks_by_id = {t["id"]: t.get("name", t["id"]) for t in data.get("tasks", [])}
 
         if "users" in patch:
             await _log_settings_changes(hass, old_users, data["users"])
         if "taskRows" in patch:
-            await _log_assignment_changes(hass, old_task_rows, data["taskRows"], tasks_by_id, id_to_entity)
+            await _log_assignment_changes(hass, old_task_rows, data["taskRows"], tasks_by_id, users_by_id)
         if "completions" in patch:
             new_task_rows = data["taskRows"] if "taskRows" in patch else old_task_rows
             await _log_schedule_changes(hass, old_completions, data["completions"], new_task_rows, tasks_by_id, id_to_entity)
@@ -303,6 +308,29 @@ async def _persist(hass: HomeAssistant) -> None:
     domain_data = hass.data.get(DOMAIN, {})
     if "store" in domain_data and "data" in domain_data:
         await domain_data["store"].async_save(domain_data["data"])
+
+
+def _find_user_by_entity(hass: HomeAssistant, user_entity_id: str) -> dict | None:
+    data = hass.data.get(DOMAIN, {}).get("data", {})
+    for user in data.get("users", []):
+        if user.get("haEntityId") == user_entity_id:
+            return user
+    return None
+
+
+async def _notify_user(hass: HomeAssistant, user: dict, title: str, message: str) -> None:
+    """Wysyła powiadomienie wybranym przez użytkownika kanałem HA
+    (notify.mobile_app_..., notify.telegram_..., itp.), jeśli skonfigurowany."""
+    notify_service = user.get("notifyService")
+    if not notify_service or not notify_service.startswith("notify."):
+        return
+    service = notify_service.split(".", 1)[1]
+    try:
+        await hass.services.async_call(
+            "notify", service, {"title": title, "message": message}, blocking=False
+        )
+    except Exception:  # noqa: BLE001 - usługa notify mogła zniknąć/zmienić nazwę
+        _LOGGER.warning("Nie udało się wysłać powiadomienia przez %s dla %s", notify_service, user.get("name"))
 
 
 def _task_name(hass: HomeAssistant, task_id: str) -> str | None:
@@ -411,19 +439,23 @@ async def _log_settings_changes(hass: HomeAssistant, old_users: list, new_users:
 
 
 async def _log_assignment_changes(
-    hass: HomeAssistant, old_rows: dict, new_rows: dict, tasks_by_id: dict, id_to_entity: dict
+    hass: HomeAssistant, old_rows: dict, new_rows: dict, tasks_by_id: dict, users_by_id: dict
 ) -> None:
-    """Loguje przypięcie/odpięcie osoby od zadania."""
+    """Loguje przypięcie/odpięcie osoby od zadania i powiadamia (jeśli włączone)."""
     for task_id in set(old_rows.keys()) | set(new_rows.keys()):
         old_persons = {r.get("person") for r in old_rows.get(task_id, []) if r.get("person")}
         new_persons = {r.get("person") for r in new_rows.get(task_id, []) if r.get("person")}
         task_name = tasks_by_id.get(task_id, task_id)
         for uid in new_persons - old_persons:
-            entity_id = id_to_entity.get(uid)
-            if entity_id:
-                await _log_history(hass, entity_id, f"Przypisano do zadania: {task_name}")
+            user = users_by_id.get(uid)
+            entity_id = user.get("haEntityId") if user else None
+            if not entity_id:
+                continue
+            await _log_history(hass, entity_id, f"Przypisano do zadania: {task_name}")
+            if user and user.get("notifyOnNewTask"):
+                await _notify_user(hass, user, "Nowe zadanie", f"Przypisano Ci zadanie: {task_name}")
         for uid in old_persons - new_persons:
-            entity_id = id_to_entity.get(uid)
+            entity_id = users_by_id.get(uid, {}).get("haEntityId")
             if entity_id:
                 await _log_history(hass, entity_id, f"Odpięto od zadania: {task_name}")
 

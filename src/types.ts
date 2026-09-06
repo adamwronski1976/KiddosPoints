@@ -6,6 +6,11 @@ export interface User {
   requiresApproval: boolean;
   notifyOnNewTask: boolean;
   notifyOnReward: boolean;
+  /** Usługa HA doręczająca powiadomienia temu użytkownikowi, np.
+   *  "notify.mobile_app_adams_iphone" (aplikacja) lub "notify.telegram_adam"
+   *  (komunikator). Puste = brak wybranego kanału, powiadomienia nie są wysyłane
+   *  mimo włączonych powyższych przełączników. */
+  notifyService?: string;
   pinCode?: string;
   /** Opcjonalne powiązanie z prawdziwą osobą Home Assistant (np. "person.adam"),
    *  używane do pokazania jej zdjęcia/imienia. Etykiety grupowe (Rodzice,

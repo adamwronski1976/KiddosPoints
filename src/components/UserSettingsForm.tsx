@@ -1,7 +1,10 @@
 import React, { useMemo } from 'react';
 import { User } from '../types';
 import { HomeAssistantLike } from '../haStore';
-import { Link2 } from 'lucide-react';
+import { Link2, Bell } from 'lucide-react';
+
+const slug = (s: string) =>
+  s.toLowerCase().normalize('NFD').replace(/[^\x00-\x7F]/g, '').replace(/[^a-z0-9]/g, '');
 
 interface Props {
   formData: Omit<User, 'id'>;
@@ -26,6 +29,38 @@ export const UserSettingsForm: React.FC<Props> = ({ formData, onChange, hass, is
         name: s.attributes.friendly_name || id,
       }));
   }, [hass]);
+
+  // Kanały powiadomień dostępne w tym HA, podzielone na "Aplikacja mobilna"
+  // (notify.mobile_app_*) i "Komunikator" (Telegram, Signal, Pushover, ...).
+  // Te, których nazwa pasuje do imienia/powiązanej osoby, lądują na górze listy
+  // jako "Sugerowane" - najlepsze przybliżenie "tylko to, co przypisane do niego"
+  // bez dostępu do rejestru urządzeń z poziomu karty Lovelace.
+  const notifyChannels = useMemo(() => {
+    const services = hass?.services?.notify || {};
+    const nameSlug = slug(formData.name || '');
+    const personSlug = formData.personEntityId ? slug(formData.personEntityId.replace('person.', '')) : '';
+
+    const all = Object.keys(services)
+      .filter(key => key !== 'notify' && key !== 'persistent_notification')
+      .map(key => {
+        const isApp = key.startsWith('mobile_app_');
+        const matches = (nameSlug && key.includes(nameSlug)) || (personSlug && key.includes(personSlug));
+        return {
+          service: `notify.${key}`,
+          label: services[key]?.name || key,
+          isApp,
+          suggested: matches,
+        };
+      });
+
+    return {
+      suggested: all.filter(c => c.suggested),
+      app: all.filter(c => !c.suggested && c.isApp),
+      other: all.filter(c => !c.suggested && !c.isApp),
+    };
+  }, [hass, formData.name, formData.personEntityId]);
+
+  const hasAnyNotifyChannel = notifyChannels.suggested.length + notifyChannels.app.length + notifyChannels.other.length > 0;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -125,31 +160,72 @@ export const UserSettingsForm: React.FC<Props> = ({ formData, onChange, hass, is
           </div>
         </label>
 
-        <label className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
-          <input
-            type="checkbox"
-            checked={formData.notifyOnNewTask}
-            onChange={e => onChange({ notifyOnNewTask: e.target.checked })}
-            className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
-          />
-          <div>
-            <span className="block text-sm font-semibold text-slate-800">Powiadomienia w HA (Nowe zadania)</span>
-            <span className="block text-xs text-slate-500">Wyślij powiadomienie przez HA Mobile App, gdy przypisane zostanie nowe zadanie.</span>
+        <div className="p-3 bg-white border border-slate-200 rounded-lg">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Bell className="w-4 h-4 text-slate-400" />
+            <span className="text-sm font-semibold text-slate-800">Kanał powiadomień</span>
           </div>
-        </label>
+          {hasAnyNotifyChannel ? (
+            <>
+              <select
+                value={formData.notifyService || ''}
+                onChange={e => onChange({ notifyService: e.target.value || undefined })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+              >
+                <option value="">— brak (nie wysyłaj) —</option>
+                {notifyChannels.suggested.length > 0 && (
+                  <optgroup label="⭐ Sugerowane">
+                    {notifyChannels.suggested.map(c => (
+                      <option key={c.service} value={c.service}>{c.label}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {notifyChannels.app.length > 0 && (
+                  <optgroup label="📱 Aplikacja mobilna">
+                    {notifyChannels.app.map(c => (
+                      <option key={c.service} value={c.service}>{c.label}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {notifyChannels.other.length > 0 && (
+                  <optgroup label="💬 Komunikator / inne">
+                    {notifyChannels.other.map(c => (
+                      <option key={c.service} value={c.service}>{c.label}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Wybiera, którą usługą HA (aplikacja mobilna, Telegram, itp.) będą doręczane poniższe powiadomienia. Puste = brak wysyłki.
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-slate-400">
+              {hass ? 'Brak skonfigurowanych usług notify w tym HA.' : 'Dostępne tylko wewnątrz Home Assistant.'}
+            </p>
+          )}
 
-        <label className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
-          <input
-            type="checkbox"
-            checked={formData.notifyOnReward}
-            onChange={e => onChange({ notifyOnReward: e.target.checked })}
-            className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
-          />
-          <div>
-            <span className="block text-sm font-semibold text-slate-800">Powiadomienia w HA (Odebrane nagrody)</span>
-            <span className="block text-xs text-slate-500">Wyślij powiadomienie, gdy ten użytkownik odbierze nagrodę ze sklepu.</span>
+          <div className="mt-3 space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.notifyOnNewTask}
+                onChange={e => onChange({ notifyOnNewTask: e.target.checked })}
+                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-slate-700">Nowe przypisane zadanie</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.notifyOnReward}
+                onChange={e => onChange({ notifyOnReward: e.target.checked })}
+                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-slate-700">Odebrana nagroda</span>
+            </label>
           </div>
-        </label>
+        </div>
       </div>
     </div>
   );
