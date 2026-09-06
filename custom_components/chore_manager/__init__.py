@@ -90,11 +90,12 @@ _PATCHABLE_KEYS = [
 # Wersja dołączonych zasobów frontendu (karty Lovelace). Bump przy każdej
 # zmianie plików w frontend/, żeby przeglądarki i rejestr zasobów Lovelace nie
 # trzymały starej wersji ze swojego cache (dopisywane jako ?v= do URL-a).
-FRONTEND_VERSION = "1.5.1"
+FRONTEND_VERSION = "1.6.0"
 FRONTEND_URL_BASE = "/chore_manager_static"
 FRONTEND_MODULES = [
     {"filename": "chore-manager-card.js", "version": FRONTEND_VERSION},
     {"filename": "pending-approvals-card.js", "version": FRONTEND_VERSION},
+    {"filename": "kiddos-admin-panel.js", "version": FRONTEND_VERSION},
 ]
 
 
