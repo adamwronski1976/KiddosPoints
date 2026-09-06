@@ -329,15 +329,13 @@ export const UserPanel: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* HARMONOGRAMY - dokładnie ten sam komponent co panel główny, przefiltrowany */}
+      {/* HARMONOGRAM - dokładnie ten sam komponent co panel główny, przefiltrowany */}
       <Schedule
         users={users}
-        viewMode="week"
         tasks={tasks}
         taskRows={taskRows}
         completions={completions}
         customSchedule={customSchedule}
-        isWeeklyPattern={true}
         personId={user.id}
         personName={user.name}
         onAddRow={onAddRow}
@@ -345,23 +343,6 @@ export const UserPanel: React.FC<Props> = ({
         onRemoveRow={onRemoveRow}
         onToggleCompletion={onToggleCompletion}
         onToggleWeeklyPattern={onToggleWeeklyPattern}
-        onToggleCustomSchedule={onToggleCustomSchedule}
-        onReset={onReset}
-      />
-
-      <Schedule
-        users={users}
-        viewMode="month"
-        tasks={tasks}
-        taskRows={taskRows}
-        completions={completions}
-        customSchedule={customSchedule}
-        personId={user.id}
-        personName={user.name}
-        onAddRow={onAddRow}
-        onUpdateRow={onUpdateRow}
-        onRemoveRow={onRemoveRow}
-        onToggleCompletion={onToggleCompletion}
         onToggleCustomSchedule={onToggleCustomSchedule}
         onReset={onReset}
       />

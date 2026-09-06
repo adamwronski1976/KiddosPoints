@@ -485,34 +485,15 @@ export default function App({ hass }: AppProps) {
             <section className="w-full">
               <Schedule
                 users={state.users}
-                viewMode="week"
                 tasks={state.tasks}
                 taskRows={state.taskRows}
                 completions={state.completions}
                 customSchedule={state.customSchedule}
-                isWeeklyPattern={true}
                 onAddRow={addTaskRow}
                 onUpdateRow={updateTaskRowPerson}
                 onRemoveRow={removeTaskRow}
                 onToggleCompletion={toggleCompletion}
                 onToggleWeeklyPattern={toggleWeeklyPattern}
-                onToggleCustomSchedule={toggleCustomSchedule}
-                onReset={resetData}
-              />
-            </section>
-
-            <section className="w-full">
-              <Schedule
-                users={state.users}
-                viewMode="month"
-                tasks={state.tasks}
-                taskRows={state.taskRows}
-                completions={state.completions}
-                customSchedule={state.customSchedule}
-                onAddRow={addTaskRow}
-                onUpdateRow={updateTaskRowPerson}
-                onRemoveRow={removeTaskRow}
-                onToggleCompletion={toggleCompletion}
                 onToggleCustomSchedule={toggleCustomSchedule}
                 onReset={resetData}
               />

@@ -1,18 +1,19 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Completions, Person, TaskRow, Task, User } from '../types';
-import { Calendar, Download, RefreshCw, Plus, Minus } from 'lucide-react';
+import { Calendar, Download, RefreshCw, Plus, Minus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MdiIcon } from './MdiIcon';
 import { colorForId } from '../colorPalette';
 import * as XLSX from 'xlsx';
 
+const MONTH_NAMES = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'];
+const DAY_LETTERS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb', 'Nd'];
+
 interface ScheduleProps {
-  viewMode: 'week' | 'month';
   users: User[];
   tasks: Task[];
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
   customSchedule: Record<string, boolean>;
-  isWeeklyPattern?: boolean;
   /** Gdy podane, pokazuje tylko wiersze przypisane do tego użytkownika (i tylko
    *  zadania, w których w ogóle występuje) - używane przez panel osobisty. */
   personId?: string;
@@ -29,14 +30,19 @@ interface ScheduleProps {
 // Zarządzanie samą listą zadań (nazwa, opis, ikona, punkty, dodawanie/usuwanie)
 // przeniesione do zakładki "Zadania" (TasksManager) - ten komponent to już
 // wyłącznie siatka przypisań i checklista wykonania.
+//
+// Harmonogram jest wzorcem powtarzającym się co tydzień/miesiąc (dzień 1 =
+// zawsze poniedziałek dla danych - to się NIE zmienia). Widok miesięczny
+// dostaje jednak nawigację po prawdziwych miesiącach: poprawną liczbę dni
+// (28-31) i poprawne wyrównanie dni tygodnia dla wybranego miesiąca/roku,
+// wyłącznie na potrzeby podglądu/etykiet - zaznaczenia nadal odnoszą się do
+// tego samego, powtarzalnego "dnia 1-31" niezależnie od podglądanego miesiąca.
 export const Schedule: React.FC<ScheduleProps> = ({
-  viewMode,
   users,
   tasks,
   taskRows,
   completions,
   customSchedule,
-  isWeeklyPattern,
   personId,
   personName,
   onAddRow,
@@ -48,13 +54,32 @@ export const Schedule: React.FC<ScheduleProps> = ({
   onReset
 }) => {
   const tableRef = useRef<HTMLTableElement>(null);
-  const daysCount = viewMode === 'week' ? 7 : 31;
+  const [mode, setMode] = useState<'week' | 'month'>('week');
+  const [calDate, setCalDate] = useState(() => new Date());
+
+  const isWeeklyPattern = mode === 'week';
+  const displayYear = calDate.getFullYear();
+  const displayMonthIdx = calDate.getMonth();
+  const daysInMonth = new Date(displayYear, displayMonthIdx + 1, 0).getDate();
+  // Dzień tygodnia 1. dnia wybranego miesiąca, indeksowany od poniedziałka (0).
+  const firstWeekdayOfMonth = (new Date(displayYear, displayMonthIdx, 1).getDay() + 6) % 7;
+
+  const daysCount = mode === 'week' ? 7 : daysInMonth;
   const daysArray = Array.from({ length: daysCount }, (_, i) => i + 1);
+
+  /** Dzień tygodnia (0=Pn..6=Nd) dla pozycji `day` w aktualnym widoku - w
+   *  trybie tygodniowym to zawsze prosty modulo, w miesięcznym uwzględnia
+   *  realne wyrównanie wybranego miesiąca/roku. */
+  const dowForDay = (day: number) => (mode === 'week' ? (day - 1) % 7 : (firstWeekdayOfMonth + day - 1) % 7);
+
+  const navigateMonth = (delta: number) => {
+    setCalDate(prev => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+  };
 
   const exportToExcel = () => {
     const headers = ['Zadanie', 'Osoba', 'Pkt', ...daysArray.map(d => {
-      const dayName = ['Pn','Wt','Śr','Cz','Pt','Sb','Nd'][(d - 1) % 7];
-      return viewMode === 'week' ? dayName : `${dayName} ${d}`;
+      const dayName = DAY_LETTERS[dowForDay(d)];
+      return mode === 'week' ? dayName : `${dayName} ${d}`;
     })];
 
     const rows: any[] = [];
@@ -87,7 +112,8 @@ export const Schedule: React.FC<ScheduleProps> = ({
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Harmonogram");
-    XLSX.writeFile(wb, `Harmonogram_${viewMode === 'week' ? 'Tygodniowy' : 'Miesieczny'}.xlsx`);
+    const suffix = mode === 'week' ? 'Tygodniowy' : `Miesieczny_${MONTH_NAMES[displayMonthIdx]}_${displayYear}`;
+    XLSX.writeFile(wb, `Harmonogram_${suffix}.xlsx`);
   };
 
   const getRowMonthlySummary = (rowId: string) => {
@@ -128,11 +154,46 @@ export const Schedule: React.FC<ScheduleProps> = ({
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col w-full mb-8">
       <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Calendar className="w-6 h-6 text-emerald-600" />
           <h2 className="text-lg font-semibold text-slate-800">
-            Harmonogram ({viewMode === 'week' ? 'Tygodniowy' : 'Miesięczny'}){personName ? ` — ${personName}` : ''}
+            Harmonogram{personName ? ` — ${personName}` : ''}
           </h2>
+          <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setMode('week')}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${mode === 'week' ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-800'}`}
+            >
+              Tydzień
+            </button>
+            <button
+              onClick={() => setMode('month')}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${mode === 'month' ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-800'}`}
+            >
+              Miesiąc
+            </button>
+          </div>
+          {mode === 'month' && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => navigateMonth(-1)}
+                className="p-1 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                title="Poprzedni miesiąc"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-sm font-medium text-slate-700 min-w-[130px] text-center">
+                {MONTH_NAMES[displayMonthIdx]} {displayYear}
+              </span>
+              <button
+                onClick={() => navigateMonth(1)}
+                className="p-1 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                title="Następny miesiąc"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -141,7 +202,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
           >
             <Download className="w-4 h-4" /> Eksport XLS
           </button>
-          {viewMode === 'week' && !personId && (
+          {mode === 'week' && !personId && (
             <button
               onClick={onReset}
               className="inline-flex items-center gap-2 px-3 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500"
@@ -160,12 +221,12 @@ export const Schedule: React.FC<ScheduleProps> = ({
               <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider min-w-[140px] sticky top-0 bg-slate-50 z-20 border-r border-slate-200">Osoba</th>
               <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-50 z-20 border-r border-slate-200">Pkt</th>
               {daysArray.map(day => {
-                const dayName = ['Pn','Wt','Śr','Cz','Pt','Sb','Nd'][(day - 1) % 7];
+                const dayName = DAY_LETTERS[dowForDay(day)];
                 const isWeekend = dayName === 'Sb' || dayName === 'Nd';
                 return (
                   <th key={day} scope="col" className={`px-1 py-3 text-center text-[10px] font-bold uppercase tracking-wider min-w-[40px] sticky top-0 z-20 ${isWeekend ? 'bg-amber-50 text-amber-700' : 'bg-slate-50 text-slate-500'}`}>
                     <div>{dayName}</div>
-                    {viewMode === 'month' && <div className={`text-[8px] font-normal leading-none mt-1 ${isWeekend ? 'text-amber-600' : 'text-slate-400'}`}>{day}</div>}
+                    {mode === 'month' && <div className={`text-[8px] font-normal leading-none mt-1 ${isWeekend ? 'text-amber-600' : 'text-slate-400'}`}>{day}</div>}
                   </th>
                 );
               })}
@@ -183,7 +244,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
               const allRows = taskRows[task.id] || [];
               const rows = personId ? allRows.filter(r => r.person === personId) : allRows;
               if (personId && rows.length === 0) return null;
-              const isCustom = viewMode === 'week' && !!customSchedule[task.id];
+              const isCustom = mode === 'week' && !!customSchedule[task.id];
               // Tło naprzemienne per-zadanie (nie per-wiersz) - pomaga odróżnić grupy
               // wierszy należące do różnych zadań. Pełna krycie (bez alfa), bo jedna
               // z kolumn jest "sticky" i musi zasłaniać przewijaną zawartość pod spodem.
@@ -231,7 +292,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                             <p className="text-[10px] text-slate-400 mt-1 leading-tight">{task.description}</p>
                           )}
 
-                          {viewMode === 'week' && (
+                          {mode === 'week' && (
                             <label className="flex items-center gap-1.5 mt-3 text-[11px] text-slate-600 cursor-pointer hover:text-slate-800 transition-colors">
                               <input
                                 type="checkbox"
@@ -293,7 +354,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                       {daysArray.map(day => {
                         const key = `${row.id}_${day}`;
                         const isChecked = !!completions[key];
-                        const dayName = ['Pn','Wt','Śr','Cz','Pt','Sb','Nd'][(day - 1) % 7];
+                        const dayName = DAY_LETTERS[dowForDay(day)];
                         const isWeekend = dayName === 'Sb' || dayName === 'Nd';
 
                         let cellBg = isCustom
