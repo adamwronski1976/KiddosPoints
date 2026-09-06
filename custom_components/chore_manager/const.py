@@ -2,7 +2,7 @@
 
 DOMAIN = "chore_manager"
 NAME = "KiddosPoints"
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 # Konfiguracja i przechowywanie
 STORAGE_KEY = "chore_manager_data"

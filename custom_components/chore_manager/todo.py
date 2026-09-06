@@ -39,11 +39,74 @@ def _task_and_user(data: dict, occ: dict):
     return task, user
 
 
+# Natywna lista "todo" Home Assistant renderuje pozycje jako czysty tekst -
+# TodoItem nie ma pola ikony, więc karta todo-list nie pokaże mdi:* użytego
+# w panelu KiddosPoints. Emoji to zwykły znak unicode, więc działa wszędzie
+# (todo-list, powiadomienia, dowolna karta) bez potrzeby biblioteki ikon -
+# stąd mapowanie mdi:* -> emoji tylko na potrzeby podpisu w todo.
+_ICON_TO_EMOJI = {
+    "mdi:dishwasher": "🍽️",
+    "mdi:washing-machine": "🧺",
+    "mdi:toilet": "🚽",
+    "mdi:shower-head": "🚿",
+    "mdi:bed-outline": "🛏️",
+    "mdi:bed": "🛏️",
+    "mdi:trash-can": "🗑️",
+    "mdi:trash-can-outline": "🗑️",
+    "mdi:recycle": "♻️",
+    "mdi:mower": "🌱",
+    "mdi:rake": "🍂",
+    "mdi:snowflake": "❄️",
+    "mdi:mop": "🧹",
+    "mdi:door": "🚪",
+    "mdi:feather": "🪶",
+    "mdi:desk": "🗄️",
+    "mdi:basket-outline": "🧺",
+    "mdi:sprout": "🌱",
+    "mdi:tumble-dryer-alert": "🧺",
+    "mdi:silverware-clean": "🍴",
+    "mdi:tumble-dryer": "🌀",
+    "mdi:fish": "🐟",
+    "mdi:table-furniture": "🪑",
+    "mdi:stairs": "🪜",
+    "mdi:mirror": "🪞",
+    "mdi:light-switch": "💡",
+    "mdi:air-filter": "🌬️",
+    "mdi:wardrobe": "🧥",
+    "mdi:garage": "🚗",
+    "mdi:scissors-cutting": "✂️",
+    "mdi:countertop": "🍳",
+    "mdi:sofa": "🛋️",
+    "mdi:bookshelf": "📚",
+    "mdi:spray-bottle": "🧴",
+    "mdi:shoe-sneaker": "👟",
+    "mdi:notebook-edit": "📓",
+    "mdi:school": "🏫",
+    "mdi:bag-personal": "🎒",
+    "mdi:book-open-page-variant": "📖",
+    "mdi:flag-variant-outline": "🇬🇧",
+    "mdi:translate": "🌐",
+    "mdi:dumbbell": "🏋️",
+    "mdi:code-braces": "💻",
+    "mdi:account-group": "👥",
+    "mdi:badminton": "🏸",
+    "mdi:swim": "🏊",
+    "mdi:checkbox-marked-circle-outline": "✅",
+}
+
+
+def _icon_prefix(task: dict | None) -> str:
+    if not task:
+        return ""
+    emoji = _ICON_TO_EMOJI.get(task.get("icon", ""))
+    return f"{emoji} " if emoji else ""
+
+
 def _occurrence_summary(data: dict, occ: dict, include_person: bool) -> str:
     if occ.get("adhoc"):
         return occ.get("summary", "Zadanie")
     task, user = _task_and_user(data, occ)
-    task_name = task.get("name") if task else occ.get("task_id")
+    task_name = _icon_prefix(task) + (task.get("name") if task else occ.get("task_id"))
     if not include_person:
         return task_name
     user_name = user.get("name") if user else occ.get("person")
