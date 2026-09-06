@@ -33,6 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities.append(ChoreConfigSensor())
     entities.append(ChoreHistorySensor())
     entities.append(ChoreOverdueSensor())
+    entities.append(ChoreUpcomingSensor())
     async_add_entities(entities, update_before_add=True)
 
 
@@ -48,6 +49,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     entities.append(ChoreConfigSensor())
     entities.append(ChoreHistorySensor())
     entities.append(ChoreOverdueSensor())
+    entities.append(ChoreUpcomingSensor())
     async_add_entities(entities)
 
 
@@ -182,6 +184,7 @@ class ChoreConfigSensor(SensorEntity):
             "completions": data.get("completions", {}),
             "computerSlots": data.get("computerSlots", {}),
             "customSchedule": data.get("customSchedule", {}),
+            "periodicSchedules": data.get("periodicSchedules", {}),
         }
 
 
@@ -268,3 +271,73 @@ class ChoreOverdueSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         return {"items": self._overdue_items()}
+
+
+class ChoreUpcomingSensor(SensorEntity):
+    """Jeden sensor dla całej rodziny z WSZYSTKIMI otwartymi (jeszcze nie
+    zaległymi) wystąpieniami zadań - dziś i w przyszłości. Każda pozycja ma
+    pole `bucket` gotowe do grupowania na dashboardzie:
+    - "today"    - termin dziś,
+    - "longterm" - z harmonogramu niestandardowego (np. 2x w miesiącu),
+      wraz z `days_until` (ile dni do terminu),
+    - "future"   - pozostałe, z terminem w przyszłości.
+    Zaległości (termin już minięty) patrz `sensor.chore_manager_overdue`."""
+
+    _attr_name = "KiddosPoints - Nadchodzące zadania"
+    _attr_unique_id = "chore_manager_upcoming"
+    _attr_icon = "mdi:calendar-clock"
+    _attr_native_unit_of_measurement = "zadań"
+
+    def __init__(self):
+        self.entity_id = "sensor.chore_manager_upcoming"
+
+    async def async_added_to_hass(self):
+        self.hass.data.setdefault(DOMAIN, {})["upcoming_entity"] = self
+
+    def _upcoming_items(self) -> list:
+        if not self.hass:
+            return []
+        data = _stored_data(self.hass)
+        today = dt_util.now().date()
+        users_by_id = {u["id"]: u for u in data.get("users", [])}
+        tasks_by_id = {t["id"]: t for t in data.get("tasks", [])}
+        items = []
+        for occ_id, occ in data.get("occurrences", {}).items():
+            if occ.get("status") != "open" or occ.get("adhoc") or not occ.get("due"):
+                continue
+            try:
+                due = date.fromisoformat(occ["due"])
+            except ValueError:
+                continue
+            if due < today:
+                continue  # zaległe - patrz ChoreOverdueSensor
+            schedule_type = occ.get("schedule_type", "weekly")
+            if due == today:
+                bucket = "today"
+            elif schedule_type == "periodic":
+                bucket = "longterm"
+            else:
+                bucket = "future"
+            user = users_by_id.get(occ.get("person"), {})
+            task = tasks_by_id.get(occ.get("task_id"), {})
+            items.append({
+                "id": occ_id,
+                "user": user.get("haEntityId"),
+                "user_name": user.get("name", occ.get("person")),
+                "task_id": occ.get("task_id"),
+                "task_name": task.get("name", occ.get("task_id")),
+                "due": occ.get("due"),
+                "days_until": (due - today).days,
+                "schedule_type": schedule_type,
+                "bucket": bucket,
+            })
+        items.sort(key=lambda i: i["due"])
+        return items
+
+    @property
+    def native_value(self):
+        return len(self._upcoming_items())
+
+    @property
+    def extra_state_attributes(self):
+        return {"items": self._upcoming_items()}

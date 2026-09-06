@@ -20,6 +20,9 @@ from .const import (
     SERVICE_ADD_POINTS,
     SERVICE_RESET_POINTS,
     SERVICE_UPDATE_CONFIG,
+    SERVICE_SET_PERIODIC_SCHEDULE,
+    SERVICE_CLEAR_PERIODIC_SCHEDULE,
+    PERIODIC_PERIODS,
     EVENT_TASK_COMPLETED,
     EVENT_TASK_APPROVED,
     EVENT_TASK_REJECTED,
@@ -54,6 +57,10 @@ DEFAULT_DATA = {
     "completions": {},
     "computerSlots": {},
     "customSchedule": {},
+    # Harmonogram niestandardowy per przypisanie (row_id): rozliczany w okresie
+    # (miesiąc/rok) zamiast konkretnych dni tygodnia, np. "2 razy w miesiącu".
+    # Patrz _next_periodic_date/_ensure_occurrences.
+    "periodicSchedules": {},
     "pending_approvals": [],
     "points": {},
     "history": [],
@@ -72,6 +79,7 @@ _PATCHABLE_KEYS = [
     "completions",
     "computerSlots",
     "customSchedule",
+    "periodicSchedules",
 ]
 
 
@@ -97,6 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data.pop("customRewardCosts", None)
         data.setdefault("history", [])
         data.setdefault("occurrences", {})
+        data.setdefault("periodicSchedules", {})
 
     hass.data[DOMAIN]["store"] = store
     hass.data[DOMAIN]["data"] = data
@@ -201,6 +210,7 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             if any(p.get("occurrence_id") for p in removed):
                 _refresh_todo_entities(hass)
                 _refresh_overdue_sensor(hass)
+                _refresh_upcoming_sensor(hass)
 
         task_name = _task_name(hass, task_id) or task_id
         await _add_points_to_entity(hass, user_entity_id, points, reason=f"Zatwierdzono: {task_name}")
@@ -234,6 +244,7 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
             if any(p.get("occurrence_id") for p in removed):
                 _refresh_todo_entities(hass)
                 _refresh_overdue_sensor(hass)
+                _refresh_upcoming_sensor(hass)
 
         hass.bus.async_fire(EVENT_TASK_REJECTED, {
             "user": user_entity_id,
@@ -333,6 +344,74 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         if "taskRows" in patch or "completions" in patch:
             await _ensure_occurrences(hass)
 
+    async def handle_set_periodic_schedule(call: ServiceCall):
+        """Ustawia harmonogram niestandardowy (rozliczany w okresie) dla danego
+        przypisania (row_id), np. 'task_id=t3, person=u_adam, times_per_period=2,
+        period=month' = 2 razy w miesiącu. Nadpisuje harmonogram tygodniowy dla
+        tego przypisania - są wzajemnie wykluczające się."""
+        task_id = call.data.get("task_id")
+        person = call.data.get("person")
+        times_per_period = call.data.get("times_per_period")
+        period = call.data.get("period")
+
+        if period not in PERIODIC_PERIODS:
+            _LOGGER.warning("Nieprawidłowy okres harmonogramu: %s (dozwolone: %s)", period, PERIODIC_PERIODS)
+            return
+        try:
+            times_per_period = int(times_per_period)
+        except (TypeError, ValueError):
+            _LOGGER.warning("Nieprawidłowa liczba wystąpień w okresie: %s", times_per_period)
+            return
+        if times_per_period < 1:
+            _LOGGER.warning("Liczba wystąpień w okresie musi być >= 1, otrzymano: %s", times_per_period)
+            return
+
+        data = hass.data.get(DOMAIN, {}).get("data")
+        if data is None:
+            return
+        row_id = None
+        for row in data.get("taskRows", {}).get(task_id, []):
+            if row.get("person") == person:
+                row_id = row.get("id")
+                break
+        if not row_id:
+            _LOGGER.warning("Nie znaleziono przypisania zadania %s dla %s", task_id, person)
+            return
+
+        data.setdefault("periodicSchedules", {})[row_id] = {
+            "times_per_period": times_per_period,
+            "period": period,
+        }
+        await _persist(hass)
+        _refresh_config_sensor(hass)
+        await _ensure_occurrences(hass)
+        entity_id = _find_user(hass, person).get("haEntityId") if person else None
+        if entity_id:
+            task_name = _task_name(hass, task_id) or task_id
+            await _log_history(
+                hass, entity_id,
+                f"Ustawiono harmonogram niestandardowy: {task_name} — {times_per_period}x / {period}",
+            )
+
+    async def handle_clear_periodic_schedule(call: ServiceCall):
+        """Usuwa harmonogram niestandardowy z danego przypisania (wraca do
+        harmonogramu tygodniowego, jeśli jakiś jest zaznaczony)."""
+        task_id = call.data.get("task_id")
+        person = call.data.get("person")
+        data = hass.data.get(DOMAIN, {}).get("data")
+        if data is None:
+            return
+        row_id = None
+        for row in data.get("taskRows", {}).get(task_id, []):
+            if row.get("person") == person:
+                row_id = row.get("id")
+                break
+        if not row_id or row_id not in data.get("periodicSchedules", {}):
+            return
+        del data["periodicSchedules"][row_id]
+        await _persist(hass)
+        _refresh_config_sensor(hass)
+
     # Rejestracja wszystkich serwisów
     hass.services.async_register(DOMAIN, SERVICE_COMPLETE_TASK, handle_complete_task)
     hass.services.async_register(DOMAIN, SERVICE_APPROVE_TASK, handle_approve_task)
@@ -341,6 +420,8 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_ADD_POINTS, handle_add_points)
     hass.services.async_register(DOMAIN, SERVICE_RESET_POINTS, handle_reset_points)
     hass.services.async_register(DOMAIN, SERVICE_UPDATE_CONFIG, handle_update_config)
+    hass.services.async_register(DOMAIN, SERVICE_SET_PERIODIC_SCHEDULE, handle_set_periodic_schedule)
+    hass.services.async_register(DOMAIN, SERVICE_CLEAR_PERIODIC_SCHEDULE, handle_clear_periodic_schedule)
 
 
 async def _persist(hass: HomeAssistant) -> None:
@@ -348,6 +429,14 @@ async def _persist(hass: HomeAssistant) -> None:
     domain_data = hass.data.get(DOMAIN, {})
     if "store" in domain_data and "data" in domain_data:
         await domain_data["store"].async_save(domain_data["data"])
+
+
+def _find_user(hass: HomeAssistant, user_id: str) -> dict:
+    data = hass.data.get(DOMAIN, {}).get("data", {})
+    for user in data.get("users", []):
+        if user.get("id") == user_id:
+            return user
+    return {}
 
 
 def _find_user_by_entity(hass: HomeAssistant, user_entity_id: str) -> dict | None:
@@ -405,6 +494,12 @@ def _refresh_todo_entities(hass: HomeAssistant) -> None:
 
 def _refresh_overdue_sensor(hass: HomeAssistant) -> None:
     entity = hass.data.get(DOMAIN, {}).get("overdue_entity")
+    if entity is not None:
+        entity.async_write_ha_state()
+
+
+def _refresh_upcoming_sensor(hass: HomeAssistant) -> None:
+    entity = hass.data.get(DOMAIN, {}).get("upcoming_entity")
     if entity is not None:
         entity.async_write_ha_state()
 
@@ -655,6 +750,36 @@ def _next_weekday_date(from_date: "date", weekdays: set) -> "date":
     return from_date
 
 
+def _period_bounds(day: "date", period: str) -> tuple["date", "date"]:
+    """Zwraca (początek, koniec-wyłącznie) okresu miesięcznego/rocznego
+    zawierającego podany dzień."""
+    if period == "year":
+        return date(day.year, 1, 1), date(day.year + 1, 1, 1)
+    # "month" (domyślny/jedyny inny obsługiwany okres)
+    if day.month == 12:
+        return date(day.year, 12, 1), date(day.year + 1, 1, 1)
+    return date(day.year, day.month, 1), date(day.year, day.month + 1, 1)
+
+
+def _next_periodic_date(from_date: "date", times_per_period: int, period: str) -> "date":
+    """Rozkłada `times_per_period` terminów równomiernie w obrębie okresu
+    (miesiąc/rok) i zwraca najbliższy nieminięty (>= from_date). Np. 2 razy
+    w miesiącu = terminy mniej więcej w połowie i na końcu miesiąca; 4 razy
+    w roku = raz na kwartał. Gdy wszystkie terminy bieżącego okresu już minęły,
+    zwraca pierwszy termin okresu następnego."""
+    n = max(1, times_per_period)
+    for _ in range(2):  # bieżący okres, a razie potrzeby - następny
+        p_start, p_end = _period_bounds(from_date, period)
+        period_len = (p_end - p_start).days
+        for k in range(n):
+            slot_due = p_start + timedelta(days=max(0, round((k + 1) * period_len / n) - 1))
+            if slot_due >= from_date:
+                return slot_due
+        # wszystkie terminy tego okresu minęły -> sprawdź następny okres
+        from_date = p_end
+    return from_date
+
+
 async def _ensure_occurrences(hass: HomeAssistant) -> None:
     """Dogenerowuje brakujące wystąpienia dla każdego cyklicznego przypisania
     z Harmonogramu (jedno aktywne wystąpienie naraz na przypisanie)."""
@@ -680,10 +805,20 @@ async def _ensure_occurrences(hass: HomeAssistant) -> None:
             row_id = row.get("id")
             if not person or not row_id or active_by_row.get(row_id):
                 continue
-            weekdays = {d for d in range(1, 8) if data.get("completions", {}).get(f"{row_id}_{d}")}
-            if not weekdays:
-                continue
-            due = _next_weekday_date(today, weekdays)
+
+            periodic = data.get("periodicSchedules", {}).get(row_id)
+            if periodic:
+                due = _next_periodic_date(
+                    today, periodic.get("times_per_period", 1), periodic.get("period", "month")
+                )
+                schedule_type = "periodic"
+            else:
+                weekdays = {d for d in range(1, 8) if data.get("completions", {}).get(f"{row_id}_{d}")}
+                if not weekdays:
+                    continue
+                due = _next_weekday_date(today, weekdays)
+                schedule_type = "weekly"
+
             occ_id = f"occ_{row_id}_{due.isoformat()}"
             if occ_id in occurrences:
                 continue
@@ -694,6 +829,7 @@ async def _ensure_occurrences(hass: HomeAssistant) -> None:
                 "person": person,
                 "due": due.isoformat(),
                 "status": "open",
+                "schedule_type": schedule_type,
                 "created": dt_util.utcnow().isoformat(),
             }
             active_by_row[row_id] = True
@@ -703,6 +839,7 @@ async def _ensure_occurrences(hass: HomeAssistant) -> None:
         await _persist(hass)
     _refresh_todo_entities(hass)
     _refresh_overdue_sensor(hass)
+    _refresh_upcoming_sensor(hass)
 
 
 def _occurrence_context(hass: HomeAssistant, occ_id: str):
@@ -748,6 +885,7 @@ async def _complete_occurrence(hass: HomeAssistant, occ_id: str) -> None:
         _refresh_pending_sensor(hass)
         _refresh_todo_entities(hass)
         _refresh_overdue_sensor(hass)
+        _refresh_upcoming_sensor(hass)
         hass.bus.async_fire(EVENT_TASK_COMPLETED, {
             "user": user.get("haEntityId"),
             "task_id": occ.get("task_id"),
@@ -773,6 +911,7 @@ async def _complete_occurrence(hass: HomeAssistant, occ_id: str) -> None:
         await _persist(hass)
         _refresh_todo_entities(hass)
         _refresh_overdue_sensor(hass)
+        _refresh_upcoming_sensor(hass)
         await _add_points_to_entity(hass, user2.get("haEntityId"), task2.get("points", 0), reason=f"Zadanie: {task2.get('name')}")
         hass.bus.async_fire(EVENT_TASK_COMPLETED, {
             "user": user2.get("haEntityId"),
@@ -834,3 +973,4 @@ async def _delete_occurrence(hass: HomeAssistant, occ_id: str) -> None:
         await _persist(hass)
         _refresh_todo_entities(hass)
         _refresh_overdue_sensor(hass)
+        _refresh_upcoming_sensor(hass)

@@ -177,6 +177,69 @@ reset_points:
         entity:
           domain: sensor
 
+set_periodic_schedule:
+  name: Ustaw harmonogram niestandardowy
+  description: >-
+    Ustawia harmonogram rozliczany w okresie (np. "2 razy w miesiącu", "4 razy
+    w roku") dla danego przypisania zadanie+osoba, zamiast konkretnych dni
+    tygodnia. Terminy są rozkładane równomiernie w obrębie okresu.
+  fields:
+    task_id:
+      name: ID Zadania
+      description: ID zadania z Harmonogramu.
+      required: true
+      example: t3
+      selector:
+        text:
+    person:
+      name: ID Osoby
+      description: ID osoby (np. u_adam) - to samo, co w taskRows.
+      required: true
+      example: u_adam
+      selector:
+        text:
+    times_per_period:
+      name: Ile razy w okresie
+      description: Ile razy zadanie ma być rozliczane w wybranym okresie.
+      required: true
+      default: 1
+      example: 2
+      selector:
+        number:
+          min: 1
+          max: 31
+    period:
+      name: Okres
+      description: Okres rozliczeniowy.
+      required: true
+      default: month
+      selector:
+        select:
+          options:
+            - label: Miesiąc
+              value: month
+            - label: Rok
+              value: year
+
+clear_periodic_schedule:
+  name: Usuń harmonogram niestandardowy
+  description: Usuwa harmonogram niestandardowy z przypisania (wraca do harmonogramu tygodniowego, jeśli ustawiony).
+  fields:
+    task_id:
+      name: ID Zadania
+      description: ID zadania z Harmonogramu.
+      required: true
+      example: t3
+      selector:
+        text:
+    person:
+      name: ID Osoby
+      description: ID osoby (np. u_adam).
+      required: true
+      example: u_adam
+      selector:
+        text:
+
 update_config:
   name: Zaktualizuj konfigurację
   description: >-

@@ -2,7 +2,7 @@
 
 DOMAIN = "chore_manager"
 NAME = "KiddosPoints"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # Konfiguracja i przechowywanie
 STORAGE_KEY = "chore_manager_data"
@@ -18,6 +18,11 @@ SERVICE_CLAIM_REWARD = "claim_reward"
 SERVICE_ADD_POINTS = "add_points"
 SERVICE_RESET_POINTS = "reset_points"
 SERVICE_UPDATE_CONFIG = "update_config"
+SERVICE_SET_PERIODIC_SCHEDULE = "set_periodic_schedule"
+SERVICE_CLEAR_PERIODIC_SCHEDULE = "clear_periodic_schedule"
+
+# Okresy obsługiwane przez harmonogram niestandardowy (patrz set_periodic_schedule)
+PERIODIC_PERIODS = ("month", "year")
 
 # Nazwy zdarzeń (Events)
 EVENT_TASK_COMPLETED = "chore_manager_task_completed"
