@@ -258,6 +258,7 @@ class ChoreOverdueSensor(SensorEntity):
                 "user_name": user.get("name", occ.get("person")),
                 "task_id": occ.get("task_id"),
                 "task_name": task.get("name", occ.get("task_id")),
+                "task_icon": task.get("icon") or "mdi:checkbox-marked-circle-outline",
                 "due": occ.get("due"),
                 "days_overdue": (today - due).days,
             })
@@ -326,6 +327,7 @@ class ChoreUpcomingSensor(SensorEntity):
                 "user_name": user.get("name", occ.get("person")),
                 "task_id": occ.get("task_id"),
                 "task_name": task.get("name", occ.get("task_id")),
+                "task_icon": task.get("icon") or "mdi:checkbox-marked-circle-outline",
                 "due": occ.get("due"),
                 "days_until": (due - today).days,
                 "schedule_type": schedule_type,
