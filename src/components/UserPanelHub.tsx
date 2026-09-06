@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { User, Task, TaskRow, Completions, HistoryEntry, PendingApproval, Reward, Person, OverdueItem } from '../types';
+import { User, Task, TaskRow, Completions, HistoryEntry, PendingApproval, Reward, Person, OverdueItem, PeriodicSchedule } from '../types';
 import { HomeAssistantLike } from '../haStore';
 import { UserSettingsForm } from './UserSettingsForm';
 import { UserPanel } from './UserPanel';
@@ -23,6 +23,7 @@ interface Props {
   taskRows: Record<string, TaskRow[]>;
   completions: Completions;
   customSchedule: Record<string, boolean>;
+  periodicSchedules: Record<string, PeriodicSchedule>;
   rewards: Reward[];
   history: HistoryEntry[];
   pendingApprovals: PendingApproval[];
@@ -37,6 +38,8 @@ interface Props {
   onToggleCompletion: (rowId: string, dayIndex: number, completed: boolean) => void;
   onToggleWeeklyPattern: (rowId: string, dayIndex: number, completed: boolean) => void;
   onToggleCustomSchedule: (taskId: string) => void;
+  onSetPeriodicSchedule: (taskId: string, personId: string, timesPerPeriod: number, period: 'month' | 'year') => void;
+  onClearPeriodicSchedule: (taskId: string, personId: string) => void;
   onReset: () => void;
   onAssign: (taskId: string, userId: string) => void;
   pointActions?: {
@@ -52,9 +55,10 @@ interface Props {
  *  domownik od razu widzi tylko swój panel, bez możliwości przełączenia się
  *  na kogoś innego. */
 export const UserPanelHub: React.FC<Props> = ({
-  users, tasks, taskRows, completions, customSchedule, rewards, history, pendingApprovals, overdue = [], hass,
+  users, tasks, taskRows, completions, customSchedule, periodicSchedules, rewards, history, pendingApprovals, overdue = [], hass,
   onAddUser, onUpdateUser, onRemoveUser,
   onAddRow, onUpdateRow, onRemoveRow, onToggleCompletion, onToggleWeeklyPattern, onToggleCustomSchedule,
+  onSetPeriodicSchedule, onClearPeriodicSchedule,
   onReset, onAssign, pointActions
 }) => {
   // Bez hass (podgląd lokalny) nikt nie jest "zalogowany" - domyślnie traktuj
@@ -95,6 +99,7 @@ export const UserPanelHub: React.FC<Props> = ({
     taskRows,
     completions,
     customSchedule,
+    periodicSchedules,
     rewards,
     history,
     pendingApprovals,
@@ -106,6 +111,8 @@ export const UserPanelHub: React.FC<Props> = ({
     onToggleCompletion,
     onToggleWeeklyPattern,
     onToggleCustomSchedule,
+    onSetPeriodicSchedule,
+    onClearPeriodicSchedule,
     onReset,
     onAssign,
     pointActions,

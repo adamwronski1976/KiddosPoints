@@ -84,5 +84,13 @@ export interface TaskRow {
   person: Person;
 }
 
+/** Harmonogram niestandardowy rozliczany w okresie (np. "2 razy w miesiącu"),
+ *  zamiast konkretnych dni tygodnia - kluczowany po id wiersza (TaskRow.id),
+ *  wzajemnie wykluczający się z harmonogramem tygodniowym dla tego wiersza. */
+export interface PeriodicSchedule {
+  times_per_period: number;
+  period: 'month' | 'year';
+}
+
 // Completions stores if a task row is completed on a specific day (e.g. `${rowId}_${dayIndex}`)
 export type Completions = Record<string, boolean>;

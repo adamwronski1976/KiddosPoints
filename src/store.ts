@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TaskRow, Completions, Person, Task, Reward, Penalty, User, HistoryEntry, PendingApproval, OverdueItem } from './types';
+import { TaskRow, Completions, Person, Task, Reward, Penalty, User, HistoryEntry, PendingApproval, OverdueItem, PeriodicSchedule } from './types';
 import { TASKS, REWARDS, PENALTIES } from './data';
 
 interface AppState {
@@ -11,6 +11,7 @@ interface AppState {
   completions: Completions;
   computerSlots: Record<string, number>;
   customSchedule: Record<string, boolean>;
+  periodicSchedules: Record<string, PeriodicSchedule>;
   /** Zawsze pusta w trybie lokalnym — dziennik zmian punktów prowadzi tylko
    *  backend HA (useHaConfigStore). Obecna tu wyłącznie po to, by komponenty
    *  mogły czytać state.history niezależnie od tego, który store jest aktywny. */
@@ -40,6 +41,7 @@ const DEFAULT_STATE: AppState = {
   completions: {},
   computerSlots: {},
   customSchedule: {},
+  periodicSchedules: {},
   history: [],
   pendingApprovals: [],
   overdue: []
@@ -62,6 +64,7 @@ export function useAppStore() {
           completions: parsed.completions || DEFAULT_STATE.completions,
           computerSlots: parsed.computerSlots || DEFAULT_STATE.computerSlots,
           customSchedule: parsed.customSchedule || DEFAULT_STATE.customSchedule,
+          periodicSchedules: parsed.periodicSchedules || DEFAULT_STATE.periodicSchedules,
           history: DEFAULT_STATE.history
         };
       } catch (e) {
@@ -239,6 +242,27 @@ export function useAppStore() {
     }));
   };
 
+  const setPeriodicSchedule = (taskId: string, personId: string, timesPerPeriod: number, period: 'month' | 'year') => {
+    setState(prev => {
+      const row = (prev.taskRows[taskId] || []).find(r => r.person === personId);
+      if (!row) return prev;
+      return {
+        ...prev,
+        periodicSchedules: { ...prev.periodicSchedules, [row.id]: { times_per_period: timesPerPeriod, period } }
+      };
+    });
+  };
+
+  const clearPeriodicSchedule = (taskId: string, personId: string) => {
+    setState(prev => {
+      const row = (prev.taskRows[taskId] || []).find(r => r.person === personId);
+      if (!row) return prev;
+      const newPeriodic = { ...prev.periodicSchedules };
+      delete newPeriodic[row.id];
+      return { ...prev, periodicSchedules: newPeriodic };
+    });
+  };
+
   const assignUserToTask = (taskId: string, userId: string) => {
     setState(prev => {
       const rows = prev.taskRows[taskId] || [];
@@ -338,6 +362,8 @@ export function useAppStore() {
     removePenalty,
     updateComputerSlot,
     toggleCustomSchedule,
+    setPeriodicSchedule,
+    clearPeriodicSchedule,
     assignUserToTask,
     unassignUserFromTask,
     importData,

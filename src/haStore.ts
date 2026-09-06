@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval, Task, Reward, Penalty, OverdueItem } from './types';
+import { TaskRow, Completions, Person, User, HistoryEntry, PendingApproval, Task, Reward, Penalty, OverdueItem, PeriodicSchedule } from './types';
 
 const CONFIG_ENTITY = 'sensor.chore_manager_config';
 const HISTORY_ENTITY = 'sensor.chore_manager_history';
@@ -27,6 +27,7 @@ interface HaAppState {
   completions: Completions;
   computerSlots: Record<string, number>;
   customSchedule: Record<string, boolean>;
+  periodicSchedules: Record<string, PeriodicSchedule>;
   history: HistoryEntry[];
   pendingApprovals: PendingApproval[];
   overdue: OverdueItem[];
@@ -41,6 +42,7 @@ const EMPTY_STATE: HaAppState = {
   completions: {},
   computerSlots: {},
   customSchedule: {},
+  periodicSchedules: {},
   history: [],
   pendingApprovals: [],
   overdue: [],
@@ -69,6 +71,7 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
       completions: attrs.completions || {},
       computerSlots: attrs.computerSlots || {},
       customSchedule: attrs.customSchedule || {},
+      periodicSchedules: attrs.periodicSchedules || {},
       history: historyItems || [],
       pendingApprovals: pendingItems || [],
       overdue: overdueItems || [],
@@ -206,6 +209,19 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     patch({ customSchedule: { ...state.customSchedule, [taskId]: !state.customSchedule[taskId] } });
   };
 
+  // Harmonogram niestandardowy rozliczany w okresie - to realne usługi
+  // chore_manager (nie update_config), bo backend sam wylicza z nich
+  // konkretne terminy wystąpień (_ensure_occurrences).
+  const setPeriodicSchedule = (taskId: string, personId: string, timesPerPeriod: number, period: 'month' | 'year') => {
+    hass.callService('chore_manager', 'set_periodic_schedule', {
+      task_id: taskId, person: personId, times_per_period: timesPerPeriod, period,
+    });
+  };
+
+  const clearPeriodicSchedule = (taskId: string, personId: string) => {
+    hass.callService('chore_manager', 'clear_periodic_schedule', { task_id: taskId, person: personId });
+  };
+
   const importData = (importedState: Partial<HaAppState>) => {
     if (!importedState || typeof importedState !== 'object') return false;
     const next: Record<string, any> = {};
@@ -301,6 +317,8 @@ export function useHaConfigStore(hass: HomeAssistantLike) {
     removeTask,
     updateComputerSlot,
     toggleCustomSchedule,
+    setPeriodicSchedule,
+    clearPeriodicSchedule,
     assignUserToTask,
     unassignUserFromTask,
     importData,

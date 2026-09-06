@@ -37,6 +37,8 @@ export default function App({ hass }: AppProps) {
     removeTask,
     updateComputerSlot,
     toggleCustomSchedule,
+    setPeriodicSchedule,
+    clearPeriodicSchedule,
     importData,
     resetData,
     addUser,
@@ -441,6 +443,7 @@ export default function App({ hass }: AppProps) {
               taskRows={state.taskRows}
               completions={state.completions}
               customSchedule={state.customSchedule}
+              periodicSchedules={state.periodicSchedules}
               rewards={state.rewards}
               history={state.history}
               pendingApprovals={state.pendingApprovals}
@@ -455,6 +458,8 @@ export default function App({ hass }: AppProps) {
               onToggleCompletion={toggleCompletion}
               onToggleWeeklyPattern={toggleWeeklyPattern}
               onToggleCustomSchedule={toggleCustomSchedule}
+              onSetPeriodicSchedule={setPeriodicSchedule}
+              onClearPeriodicSchedule={clearPeriodicSchedule}
               onReset={resetData}
               onAssign={assignUserToTask}
               pointActions={pointActions}
@@ -489,12 +494,15 @@ export default function App({ hass }: AppProps) {
                 taskRows={state.taskRows}
                 completions={state.completions}
                 customSchedule={state.customSchedule}
+                periodicSchedules={state.periodicSchedules}
                 onAddRow={addTaskRow}
                 onUpdateRow={updateTaskRowPerson}
                 onRemoveRow={removeTaskRow}
                 onToggleCompletion={toggleCompletion}
                 onToggleWeeklyPattern={toggleWeeklyPattern}
                 onToggleCustomSchedule={toggleCustomSchedule}
+                onSetPeriodicSchedule={setPeriodicSchedule}
+                onClearPeriodicSchedule={clearPeriodicSchedule}
                 onReset={resetData}
               />
             </section>
