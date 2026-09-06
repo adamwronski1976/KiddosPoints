@@ -346,6 +346,7 @@ class ChoreUpcomingSensor(SensorEntity):
                 "days_until": (due - today).days,
                 "schedule_type": schedule_type,
                 "bucket": bucket,
+                "reject_reason": occ.get("reject_reason"),
             })
         items.sort(key=lambda i: i["due"])
         return items

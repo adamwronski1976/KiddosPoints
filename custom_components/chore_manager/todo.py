@@ -119,7 +119,12 @@ def _occurrence_description(data: dict, occ: dict) -> str | None:
     task, _ = _task_and_user(data, occ)
     if not task:
         return None
-    parts = [f"{task.get('points', 0)} pkt"]
+    parts = []
+    if occ.get("reject_reason"):
+        # Widoczne wprost na zadaniu (nie tylko w historii), żeby dziecko od
+        # razu wiedziało, co poprawić przy ponownym zgłoszeniu.
+        parts.append(f"⚠️ Odrzucono: {occ['reject_reason']}")
+    parts.append(f"{task.get('points', 0)} pkt")
     if task.get("description"):
         parts.append(task["description"])
     return " · ".join(parts)

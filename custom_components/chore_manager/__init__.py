@@ -239,6 +239,9 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
                 occ = data.get("occurrences", {}).get(occ_id) if occ_id else None
                 if occ:
                     occ["status"] = "open"
+                    # Widoczne wprost na zadaniu (opis w todo), nie tylko w
+                    # historii - dziecko od razu widzi, co poprawić.
+                    occ["reject_reason"] = reason
             await _persist(hass)
             _refresh_pending_sensor(hass)
             if any(p.get("occurrence_id") for p in removed):
